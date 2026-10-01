@@ -164,4 +164,31 @@ describe('RecipeBook — "Resume cooking?" banner (PR #475)', () => {
     expect(screen.getByTestId('guided-cook-flow')).toBeInTheDocument()
     expect(screen.queryByTestId('resume-cook-banner')).not.toBeInTheDocument()
   })
+  // Issue #755 — the Bubbles card's "Pick up at step N" lands on /recipes?resume=<id>.
+  it('a resume link opens the guided flow at the saved step directly, no banner', () => {
+    startGuidedCookSession('r1')
+    saveCookProgress('r1', 1)
+
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} resumeRecipeId="r1" />)
+
+    expect(screen.getByTestId('guided-cook-flow')).toBeInTheDocument()
+    expect(screen.getByTestId('guided-cook-step-2')).toBeInTheDocument()
+    expect(screen.queryByTestId('resume-cook-banner')).not.toBeInTheDocument()
+  })
+
+  it('a resume link for a different recipe than the saved session keeps the banner', () => {
+    startGuidedCookSession('r1')
+    saveCookProgress('r1', 1)
+
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} resumeRecipeId="someone-else" />)
+
+    expect(screen.getByTestId('resume-cook-banner')).toBeInTheDocument()
+    expect(screen.queryByTestId('guided-cook-flow')).not.toBeInTheDocument()
+  })
+
+  it('a resume link with no saved session does nothing', () => {
+    renderWithQuery(<RecipeBook recipes={[RECIPE]} resumeRecipeId="r1" />)
+    expect(screen.queryByTestId('guided-cook-flow')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('resume-cook-banner')).not.toBeInTheDocument()
+  })
 })

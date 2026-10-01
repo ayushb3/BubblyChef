@@ -18,7 +18,16 @@ prompt after the previous-options block; it overrides the system prompt's
 "different mains" rule) and `MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE` (the pill
 rule that keeps predicted pills off the main). A prompt without a fixed main is
 byte-identical to before.
+
+Issue #718: the expiring-items wording follows the profile's `expiry_priority`
+(issue #502, `domain.expiry_priority`). `meal_options_system_prompt` and
+`meal_dish_pantry_block` render the option-stage rule and the dish pantry block
+per level (Off / Gentle / Aggressive); Gentle is the text this module always had,
+so `MEAL_OPTIONS_SYSTEM_PROMPT` and `MEAL_DISH_PANTRY_BLOCK` stay as aliases of it.
+The #288 coherence guard and the "explicit request wins" rule hold at every level.
 """
+
+from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
 
 # Shared by both option-stage system prompts (issue #758). The model used to read
 # "every option must have at least one side" and return exactly one side every
@@ -42,7 +51,7 @@ with roast potatoes and green beans.
 No option may have more than one main.\
 """
 
-MEAL_OPTIONS_SYSTEM_PROMPT = f"""\
+_MEAL_OPTIONS_INTRO = f"""\
 You are a meal-planning assistant. Given the user's request, their available \
 ingredients, and their constraints, propose meal options for the same \
 occasion.
@@ -59,11 +68,34 @@ Rules:
 mains, not the same dish with a swapped side.
 - If "Must use" ingredients are listed, every option must actually use them \
 -- this overrides every other preference.
-- Ingredients marked as expiring soon are a strong preference, not a \
-requirement: weave them into an option where they genuinely fit a dish, and \
-leave them out of an option where they don't belong. Don't wedge a sweet \
-ingredient like fruit into a savoury dish unless the user asked for that \
-combination or it's a genuine part of the cuisine in play.
+"""
+
+# Expiry priority (issue #718, mirroring #502's brainstorm rules): how hard expiring
+# food is pushed into the options. Off carries no expiring-items rule at all.
+_MEAL_OPTIONS_EXPIRY_RULES: dict[ExpiryPriority, str] = {
+    "off": "",
+    "gentle": (
+        "- Ingredients marked as expiring soon are a strong preference, not a "
+        "requirement: weave them into an option where they genuinely fit a dish, and "
+        "leave them out of an option where they don't belong. Don't wedge a sweet "
+        "ingredient like fruit into a savoury dish unless the user asked for that "
+        "combination or it's a genuine part of the cuisine in play.\n"
+    ),
+    # The #288 coherence guard stays; an explicit request still wins.
+    "aggressive": (
+        "- Ingredients marked as expiring soon are a high priority: build as many "
+        "options as sensibly possible around them, and leave an expiring ingredient "
+        "out of an option only when it would clearly clash with the dish. An explicit "
+        'request (a named dish, a cuisine, or "Must use" ingredients) still wins: add '
+        "an expiring ingredient to that dish only where it fits. Every option has to "
+        "make culinary sense on its own terms -- don't weld an ingredient into a dish "
+        "just because it's expiring. In particular, don't wedge a sweet ingredient "
+        "like fruit into a savoury dish unless the user asked for that combination or "
+        "it's a genuine part of the cuisine in play.\n"
+    ),
+}
+
+_MEAL_OPTIONS_RULES_TAIL = """\
 - Match the cuisine, mood, and dietary restrictions if specified.
 - If kitchen limits are listed (e.g. "one pan"), keep the dishes simple \
 enough to realistically cook with that limited equipment -- exact \
@@ -71,6 +103,19 @@ equipment tagging happens later, at the pick stage; here it only shapes \
 what you suggest.
 - Give each option a short, appetizing title and a one-sentence blurb.\
 """
+
+
+def meal_options_system_prompt(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY) -> str:
+    """The pantry-grounded option-stage system prompt for one expiry-priority level."""
+    return (
+        _MEAL_OPTIONS_INTRO
+        + _MEAL_OPTIONS_EXPIRY_RULES[expiry_priority]
+        + _MEAL_OPTIONS_RULES_TAIL
+    )
+
+
+# The Gentle (default) rendering, kept under its old name for importers.
+MEAL_OPTIONS_SYSTEM_PROMPT = meal_options_system_prompt("gentle")
 
 # Used when the user has asked us not to look at their pantry (issue #287).
 # Mirrors BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY's approach for single-dish
@@ -153,14 +198,43 @@ from "instructions" at the same index.
 # The pantry half of MEAL_DISH_EXPANSION_SYSTEM_PROMPT's {pantry_block}.
 # Exactly one is used per dish: grounded by default, the NO_PANTRY one when
 # the user asked us not to use their pantry (issue #287). The opt-out has to
-# reach the pick stage, not just the option cards (PR #659 review).
-MEAL_DISH_PANTRY_BLOCK = """\
+# reach the pick stage, not just the option cards (PR #659 review). The grounded
+# block follows the expiry-priority level (issue #718): Off lists every item as
+# plain stock, with no "Priority ingredients (expiring soon)" line.
+_MEAL_DISH_PANTRY_BLOCKS: dict[ExpiryPriority, str] = {
+    "off": """\
+Ingredients available: {supporting_items}
+Build the recipe from these ingredients where you can. For any missing \
+ingredients, suggest pantry substitutes where possible.\
+""",
+    "gentle": """\
 Priority ingredients (expiring soon -- a strong preference, not a \
 requirement): {priority_items}
 Supporting ingredients available: {supporting_items}
 Build the recipe from these ingredients where you can. For any missing \
 ingredients, suggest pantry substitutes where possible.\
-"""
+""",
+    "aggressive": """\
+Priority ingredients (expiring soon -- use them up if you can): {priority_items}
+Supporting ingredients available: {supporting_items}
+Build the recipe around the priority ingredients and use the other ingredients \
+where you can. Leave a priority ingredient out only if it would clearly clash \
+with the dish, and don't wedge a sweet ingredient like fruit into a savoury \
+dish unless the user asked for that combination or it's a genuine part of the \
+cuisine in play. The dish itself is already chosen and still wins: add a \
+priority ingredient only where it fits. For any missing ingredients, suggest \
+pantry substitutes where possible.\
+""",
+}
+
+
+def meal_dish_pantry_block(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY) -> str:
+    """The grounded pantry-block template (unformatted) for one expiry-priority level."""
+    return _MEAL_DISH_PANTRY_BLOCKS[expiry_priority]
+
+
+# The Gentle (default) rendering, kept under its old name for importers.
+MEAL_DISH_PANTRY_BLOCK = meal_dish_pantry_block("gentle")
 
 MEAL_DISH_PANTRY_BLOCK_NO_PANTRY = """\
 The user has asked you NOT to use their pantry. Do not mention their \

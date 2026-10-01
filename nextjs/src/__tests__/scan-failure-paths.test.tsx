@@ -14,8 +14,9 @@ import ScanTab from '@/components/pantry/ScanTab'
 import * as scanApi from '@/lib/api/scan'
 import type { ScanResult } from '@/types/scan'
 
+const mockPush = jest.fn()
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn(), refresh: jest.fn() }),
 }))
 jest.mock('@/lib/api/scan', () => ({
   ...jest.requireActual('@/lib/api/scan'),
@@ -38,7 +39,13 @@ const ZERO_ITEMS: ScanResult = {
 
 interface Harness {
   name: string
-  mount: () => { container: HTMLElement; unmount: () => void; onProcessingChange: jest.Mock }
+  mount: () => {
+    container: HTMLElement
+    unmount: () => void
+    onProcessingChange: jest.Mock
+    /** How many times the scan was handed to the kitchen (#753). */
+    handedOff: () => number
+  }
 }
 
 function withClient(ui: React.ReactElement) {
@@ -51,15 +58,26 @@ const harnesses: Harness[] = [
     name: '/scan page',
     mount: () => {
       const r = render(withClient(<ScanPage />))
-      return { container: r.container, unmount: r.unmount, onProcessingChange: jest.fn() }
+      return {
+        container: r.container,
+        unmount: r.unmount,
+        onProcessingChange: jest.fn(),
+        handedOff: () => mockPush.mock.calls.length,
+      }
     },
   },
   {
     name: 'add-sheet ScanTab',
     mount: () => {
       const onProcessingChange = jest.fn()
-      const r = render(<ScanTab onItemsReady={jest.fn()} onProcessingChange={onProcessingChange} />)
-      return { container: r.container, unmount: r.unmount, onProcessingChange }
+      const onParsed = jest.fn()
+      const r = render(<ScanTab onParsed={onParsed} onProcessingChange={onProcessingChange} />)
+      return {
+        container: r.container,
+        unmount: r.unmount,
+        onProcessingChange,
+        handedOff: () => onParsed.mock.calls.length,
+      }
     },
   },
 ]
@@ -72,6 +90,7 @@ function pick(container: HTMLElement) {
 beforeEach(() => {
   jest.clearAllMocks()
   mockUpload.mockReset()
+  window.localStorage.clear()
   global.URL.createObjectURL = jest.fn(() => 'blob:mock')
   global.URL.revokeObjectURL = jest.fn()
 })
@@ -87,10 +106,11 @@ const FAILURES: Array<[string, () => Error, RegExp]> = [
 describe.each(harnesses)('$name', ({ mount }) => {
   it.each(FAILURES)('%s -> friendly copy, no stuck spinner, retry works', async (_n, makeErr, copy) => {
     mockUpload.mockRejectedValueOnce(makeErr())
-    const { container, onProcessingChange } = mount()
+    const { container, onProcessingChange, handedOff } = mount()
 
     pick(container)
     await waitFor(() => expect(screen.getByText(copy)).toBeInTheDocument())
+    expect(handedOff()).toBe(0)
 
     expect(screen.queryByText(/Scanning receipt…/)).not.toBeInTheDocument()
     expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument()
@@ -102,18 +122,19 @@ describe.each(harnesses)('$name', ({ mount }) => {
     // Retry without a reload.
     mockUpload.mockResolvedValueOnce(ONE_ITEM)
     pick(container)
-    await waitFor(() => expect(screen.getByText(/Found/)).toBeInTheDocument())
+    await waitFor(() => expect(handedOff()).toBe(1))
     expect(screen.queryByText(copy)).not.toBeInTheDocument()
   })
 
   it('zero items parsed -> a friendly "nothing found" state, not an empty review', async () => {
     mockUpload.mockResolvedValueOnce(ZERO_ITEMS)
-    const { container, onProcessingChange } = mount()
+    const { container, onProcessingChange, handedOff } = mount()
 
     pick(container)
     await waitFor(() => expect(screen.getByText(/couldn't find any items/i)).toBeInTheDocument())
 
-    expect(screen.queryByText(/Found/)).not.toBeInTheDocument()
+    // Nothing is handed to the kitchen for an empty scan (#753).
+    expect(handedOff()).toBe(0)
     expect(screen.queryByText(/Scanning receipt…/)).not.toBeInTheDocument()
     expect(screen.getByText(/Drop your receipt here/)).toBeInTheDocument()
     if (onProcessingChange.mock.calls.length) {
@@ -122,7 +143,7 @@ describe.each(harnesses)('$name', ({ mount }) => {
 
     mockUpload.mockResolvedValueOnce(ONE_ITEM)
     pick(container)
-    await waitFor(() => expect(screen.getByText(/Found/)).toBeInTheDocument())
+    await waitFor(() => expect(handedOff()).toBe(1))
   })
 
   it('closing/navigating away mid-scan aborts the request', async () => {
@@ -145,7 +166,7 @@ describe.each(harnesses)('$name', ({ mount }) => {
     let resolve!: (r: ScanResult) => void
     mockUpload.mockImplementationOnce(() => new Promise<ScanResult>((r) => { resolve = r }))
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    const { container, unmount, onProcessingChange } = mount()
+    const { container, unmount, onProcessingChange, handedOff } = mount()
     pick(container)
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1))
     unmount()
@@ -153,6 +174,8 @@ describe.each(harnesses)('$name', ({ mount }) => {
     await act(async () => { resolve(ONE_ITEM) })
     expect(errorSpy).not.toHaveBeenCalled()
     expect(onProcessingChange).not.toHaveBeenCalledWith(false)
+    // A scan that lands after the user left is not handed to the kitchen (#753).
+    expect(handedOff()).toBe(0)
     errorSpy.mockRestore()
   })
 
@@ -176,7 +199,7 @@ describe.each(harnesses)('$name', ({ mount }) => {
       signal = opts?.signal
       return new Promise<ScanResult>((_r, rej) => { rejectScan = rej })
     })
-    const { container, onProcessingChange } = mount()
+    const { container, onProcessingChange, handedOff } = mount()
     pick(container)
     await waitFor(() => expect(screen.getByText(/Scanning receipt…/)).toBeInTheDocument())
 
@@ -198,6 +221,6 @@ describe.each(harnesses)('$name', ({ mount }) => {
     // And a fresh scan works.
     mockUpload.mockResolvedValueOnce(ONE_ITEM)
     pick(container)
-    await waitFor(() => expect(screen.getByText(/Found/)).toBeInTheDocument())
+    await waitFor(() => expect(handedOff()).toBe(1))
   })
 })

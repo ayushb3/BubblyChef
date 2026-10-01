@@ -44,8 +44,8 @@ const BACKEND_RESPONSE = {
   ],
 }
 
-// One tag per row ('' = no tag): the second egg line is short (the first took both eggs).
-const EXPECTED_TAGS = ['In pantry', 'Short', 'In pantry', 'Short ½', '', 'Staple']
+// One tag per row ('' = no tag; a missing line is To buy, #805): the second egg line is short (the first took both eggs).
+const EXPECTED_TAGS = ['In pantry', 'Short', 'In pantry', 'Short ½', 'To buy', 'Staple']
 
 const fetchMock = jest.fn()
 beforeEach(() => {

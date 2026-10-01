@@ -1,64 +1,46 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useQueryClient } from '@tanstack/react-query'
 import BubblesHeader from '@/components/layout/BubblesHeader'
 import BubblesMascot from '@/components/ui/BubblesMascot'
-import ReviewSurface from '@/components/scan/ReviewSurface'
+import SpringButton from '@/components/ui/SpringButton'
+import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
+import { useScanHandOff } from '@/hooks/useScanHandOff'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
-import { scanErrorCopy, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
-import { bulkAddPantryItems } from '@/lib/api/pantry'
-import {
-  scannedToBulkAddItem,
-  assignScanIds,
-  isEmptyScan,
-  type ScannedItemWithId,
-} from '@/lib/scan-helpers'
+import { GENERIC_SCAN_ERROR_CODE, SCAN_NO_ITEMS_CODE } from '@/lib/scan-error-copy'
+import { isEmptyScan } from '@/lib/scan-helpers'
 import type { ScanResult } from '@/types/scan'
 
 /**
- * `/scan` — full-viewport receipt OCR upload + review flow.
+ * `/scan` — full-viewport receipt OCR upload.
  *
- * Owns the upload → processing → review → confirm → redirect pipeline for
- * this entry point. Review rendering itself is delegated to `ReviewSurface`
- * (presentation-only); this container is the only place that decides when a
- * write actually happens — nothing is added to the pantry until the user
- * taps the confirm button (issue #259).
+ * Owns the upload → processing → hand-off pipeline for this entry point. It no
+ * longer reviews the scan (issue #753): a parsed receipt is kept as the pending
+ * put-away and the user goes to the kitchen home, where the put-away sheet
+ * (`PutAwaySheet`, over `ReviewSurface`) opens over the scene. The add sheet's
+ * scan tab ends in the same place. Nothing is written to the pantry here: that
+ * is put-away's "Put away" tap, and only that (issue #259's confirm semantics).
  */
 
-type ScanPageState = 'upload' | 'processing' | 'review' | 'submitting' | 'celebrating'
+type ScanPageState = 'upload' | 'processing' | 'handoff'
 
 export default function ScanPage() {
-  const router = useRouter()
-  const queryClient = useQueryClient()
+  const handOff = useScanHandOff()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const [state, setState] = useState<ScanPageState>('upload')
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const [readyToAdd, setReadyToAdd] = useState<ScannedItemWithId[]>([])
-  const [needsReview, setNeedsReview] = useState<ScannedItemWithId[]>([])
-  const [skipped, setSkipped] = useState<ScannedItemWithId[]>([])
-  const [warnings, setWarnings] = useState<string[]>([])
-  const [addedCount, setAddedCount] = useState(0)
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
 
-  // Cancel the pending celebrate-then-redirect if the user navigates away
-  // (e.g. taps the bottom nav) before it fires, or the component unmounts
-  // for any other reason — otherwise the stale timer still calls
-  // `router.push('/')` afterwards and yanks the user off wherever
-  // they just navigated to.
-  //
-  // The same unmount also tears down a scan still in flight (issue #642):
-  // the request is aborted so a vision call nobody is waiting for stops
-  // billing, and `unmountedRef` keeps its late settle from touching state.
+  // Leaving mid-scan (the bottom nav, Cancel) tears down a scan still in flight
+  // (issue #642): the request is aborted so a vision call nobody is waiting for
+  // stops billing, and `unmountedRef` keeps its late settle from touching state
+  // or handing a scan to a user who has gone elsewhere.
   const scanTokenRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
   const inFlightRef = useRef(false)
@@ -69,7 +51,6 @@ export default function ScanPage() {
     return () => {
       unmountedRef.current = true
       abortControllerRef.current?.abort()
-      if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
     }
   }, [])
 
@@ -91,26 +72,29 @@ export default function ScanPage() {
     try {
       const result: ScanResult = await uploadReceipt(file, { signal: controller.signal })
       if (isStale()) return
-      const withIds = assignScanIds(result)
-      if (isEmptyScan(withIds)) {
-        // The scan worked but found nothing: say so, rather than showing
-        // "Found 0 items" over an empty review list (#642).
-        setError(scanErrorCopy(SCAN_NO_ITEMS_CODE))
+      if (
+        isEmptyScan({
+          ready_to_add: result.ready_to_add,
+          needs_review: result.needs_review,
+          // Skipped lines alone leave nothing to put away (#753).
+          skipped: [],
+        })
+      ) {
+        // The scan worked but found nothing: say so, rather than putting an
+        // empty scan away (#642).
+        setError(SCAN_NO_ITEMS_CODE)
         setState('upload')
         if (inputRef.current) inputRef.current.value = ''
         return
       }
-      setReadyToAdd(withIds.ready_to_add)
-      setNeedsReview(withIds.needs_review)
-      setSkipped(withIds.skipped)
-      setWarnings(result.warnings ?? [])
-      setState('review')
+      setState('handoff')
+      handOff(result)
     } catch (err) {
       if (isStale()) return
       // #396 — never render a raw error at the user. ScanTab had this fixed;
       // this route builds its own state machine and was missed, so a network
       // TypeError or a proxy 502 still leaked raw text here.
-      setError(scanErrorCopy(err instanceof ScanError ? err.code : undefined))
+      setError(err instanceof ScanError ? err.code : GENERIC_SCAN_ERROR_CODE)
       setState('upload')
       // Retrying the same receipt is the obvious next move after a transient
       // failure, but `onChange` doesn't fire for an unchanged value — so
@@ -136,42 +120,6 @@ export default function ScanPage() {
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  function handleReset() {
-    setState('upload')
-    setPreview(null)
-    setError(null)
-    setReadyToAdd([])
-    setNeedsReview([])
-    setSkipped([])
-    setWarnings([])
-    if (inputRef.current) inputRef.current.value = ''
-  }
-
-  async function handleConfirm(checkedItems: ScannedItemWithId[]) {
-    if (checkedItems.length === 0) return
-    setState('submitting')
-    setError(null)
-
-    try {
-      await bulkAddPantryItems(checkedItems.map(scannedToBulkAddItem))
-      queryClient.invalidateQueries({ queryKey: ['pantry'] })
-      queryClient.invalidateQueries({ queryKey: ['bubbles'] })
-      // Celebrate briefly before leaving the page (issue #525). The timer is
-      // kept in a ref and cleared on unmount (see the effect above) — if the
-      // user taps the bottom nav during the celebration, this redirect must
-      // not fire afterwards and override the navigation they just chose.
-      setAddedCount(checkedItems.length)
-      setState('celebrating')
-      celebrateTimerRef.current = setTimeout(() => {
-        celebrateTimerRef.current = null
-        router.push('/')
-      }, 1500)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add items')
-      setState('review')
-    }
-  }
-
   return (
     <div className="min-h-screen pb-24">
       <BubblesHeader
@@ -187,9 +135,7 @@ export default function ScanPage() {
 
       <div className="px-6 pt-4">
         {error && (
-          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">
-            {error}
-          </div>
+          <ScanFailureNotice code={error} onRetry={() => inputRef.current?.click()} />
         )}
 
         <AnimatePresence mode="wait">
@@ -262,70 +208,29 @@ export default function ScanPage() {
                 <p className="font-semibold text-[var(--color-text)]">Scanning receipt…</p>
               </div>
               <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
-              <button
-                type="button"
-                onClick={handleCancelScan}
-                className="mt-4 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
-              >
-                Cancel scan
-              </button>
-            </motion.div>
-          )}
-
-          {(state === 'review' || state === 'submitting') && (
-            <motion.div
-              key="review"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.25 }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm text-[var(--color-muted)]">
-                  Found{' '}
-                  <span className="font-semibold text-[var(--color-text)]">
-                    {readyToAdd.length + needsReview.length + skipped.length}
-                  </span>{' '}
-                  items
-                </p>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  disabled={state === 'submitting'}
-                  className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors disabled:opacity-50"
-                >
-                  Scan again
-                </button>
+              <div className="mt-4 flex justify-center">
+                <SpringButton variant="secondary" size="sm" onClick={handleCancelScan}>
+                  Cancel scan
+                </SpringButton>
               </div>
-
-              <ReviewSurface
-                readyToAdd={readyToAdd}
-                needsReview={needsReview}
-                skipped={skipped}
-                warnings={warnings}
-                onReadyChange={setReadyToAdd}
-                onReviewChange={setNeedsReview}
-                onSkippedChange={setSkipped}
-                onConfirm={handleConfirm}
-                isSubmitting={state === 'submitting'}
-              />
             </motion.div>
           )}
 
-          {state === 'celebrating' && (
+          {state === 'handoff' && (
             <motion.div
-              key="celebrating"
+              key="handoff"
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.25 }}
               className="text-center"
+              role="status"
             >
               <div className="flex justify-center mb-3">
-                <BubblesMascot state="celebrate" size={88} />
+                <BubblesMascot state="happy" size={72} />
               </div>
               <p className="font-semibold text-[var(--color-text)]">
-                Added {addedCount} item{addedCount === 1 ? '' : 's'} to your pantry!
+                Taking your shopping to the kitchen…
               </p>
             </motion.div>
           )}

@@ -93,7 +93,7 @@ describe('RecipeCard compact variant as the saved-meal row', () => {
 })
 
 describe('attributeToBuy', () => {
-  it('gives each missing food to the first dish that lists it, folding case and plurals', () => {
+  it('gives each missing food to every dish that lists it, folding case and plurals (issue #805)', () => {
     const result = attributeToBuy(
       ['Lemons', 'parsley', 'saffron'],
       [
@@ -102,9 +102,15 @@ describe('attributeToBuy', () => {
         { position: 2, names: ['romaine'] },
       ],
     )
+    // Lemon is missing in two dishes: both rows read To buy, so both cards list it.
     expect(result.get(0)).toEqual(['Lemons'])
-    expect(result.get(1)).toEqual(['parsley'])
+    expect(result.get(1)).toEqual(['Lemons', 'parsley'])
     // Every dish has an entry; "saffron" belongs to no dish and is dropped.
     expect(result.get(2)).toEqual([])
+  })
+
+  it('lists a food once per dish even when that dish names it twice', () => {
+    const result = attributeToBuy(['onion'], [{ position: 0, names: ['onion', 'Onions'] }])
+    expect(result.get(0)).toEqual(['onion'])
   })
 })

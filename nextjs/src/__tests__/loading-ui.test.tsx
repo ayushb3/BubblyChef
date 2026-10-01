@@ -103,7 +103,7 @@ describe('HeroHome progressive paint', () => {
     jest.restoreAllMocks()
   })
 
-  it('paints the header, the wall and the mascot while the data fetches are still pending', () => {
+  it('paints the header and the wall while the data fetches are still pending', () => {
     // Never-resolving fetches: this is the "still loading" frame.
     global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch
 
@@ -114,18 +114,16 @@ describe('HeroHome progressive paint', () => {
     expect(screen.getByRole('heading', { name: 'Your kitchen' })).toBeInTheDocument()
     expect(screen.getByTestId('kitchen-wall').className).toContain('aspect-[96/80]')
     expect(screen.getByRole('button', { name: 'Fridge' })).toBeInTheDocument()
-    expect(screen.getByAltText(/^Bubbles /)).toBeInTheDocument()
 
-    // ...while the data-dependent hero message AND the tip (sourced from
-    // `GET /v1/dashboard/daily`, #225 spec-review finding 1) are still
-    // skeletons — the tip is data-dependent too, unlike the greeting, so it
-    // must not paint the fallback tip on this frame only to reflow once the
-    // AI tip lands.
-    expect(screen.queryByText(/How about|expires|pantry is empty|looking great/)).toBeNull()
+    // ...while the Bubbles card (#755) is its skeleton: it must not paint a
+    // quieter case (a fallback tip) on this frame only to swap it for the real
+    // one once the data lands.
+    expect(screen.getByTestId('bubbles-card-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('bubbles-card')).toBeNull()
     expect(screen.queryByText(/Tip:/)).toBeNull()
   })
 
-  it('fills in the data-dependent hero message and tip once the fetches resolve', async () => {
+  it('swaps the card skeleton for the Bubbles card once the fetches resolve', async () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
@@ -136,10 +134,11 @@ describe('HeroHome progressive paint', () => {
 
     renderHero()
 
-    await waitFor(() =>
-      expect(screen.getByText(/Your pantry is empty/)).toBeInTheDocument()
-    )
-    expect(screen.getByText(/Tip:/)).toBeInTheDocument()
+    // Whichever case the clock gives (a mealtime, or a quiet moment's tip), it is
+    // exactly one card.
+    expect(await screen.findByTestId('bubbles-card')).toBeInTheDocument()
+    expect(screen.queryByTestId('bubbles-card-skeleton')).toBeNull()
+    expect(screen.getAllByTestId('bubbles-card')).toHaveLength(1)
     // The title never disappeared during the transition.
     expect(screen.getByRole('heading', { name: 'Your kitchen' })).toBeInTheDocument()
   })

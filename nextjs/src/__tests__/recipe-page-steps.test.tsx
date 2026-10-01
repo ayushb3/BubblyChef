@@ -101,7 +101,7 @@ describe('RecipeDetail ingredient tags (issue #745)', () => {
     expect(screen.queryByTestId('ingredient-tag')).not.toBeInTheDocument()
   })
 
-  it('tags each ingredient from its match: In pantry, Short, Staple; a missing one gets none', () => {
+  it('tags each ingredient from its match: In pantry, Short, Staple', () => {
     render(
       <RecipeDetail
         recipe={recipe()}
@@ -116,9 +116,9 @@ describe('RecipeDetail ingredient tags (issue #745)', () => {
     expect(tags).toEqual(['In pantry', 'Staple', 'Short ½'])
   })
 
-  it('leaves a missing ingredient untagged (nothing to say beyond "you need it")', () => {
+  it('tags a missing ingredient To buy, so the row agrees with the to-buy line (issue #805)', () => {
     render(<RecipeDetail recipe={recipe()} ingredientMatches={[match('onions', 'missing')]} />)
-    expect(screen.queryByTestId('ingredient-tag')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('ingredient-tag').map((t) => t.textContent)).toEqual(['To buy'])
   })
 })
 
@@ -128,7 +128,7 @@ describe('pantryTag', () => {
     expect(pantryTag(match('x', 'substitute'))).toEqual({ label: 'In pantry', tone: 'fresh' })
     expect(pantryTag(match('x', 'imprecise'))).toEqual({ label: 'In pantry', tone: 'fresh' })
     expect(pantryTag(match('x', 'assumed'))).toEqual({ label: 'Staple', tone: 'muted' })
-    expect(pantryTag(match('x', 'missing'))).toBeNull()
+    expect(pantryTag(match('x', 'missing'))).toEqual({ label: 'To buy', tone: 'primary' })
     expect(pantryTag(match('x', 'unit_conflict'))).toBeNull()
   })
 

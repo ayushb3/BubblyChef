@@ -26,6 +26,7 @@ import {
   PLACES,
   categoryGroups,
   itemsInPlace,
+  type KitchenStock,
   type PlaceKey,
   type StoredItem,
 } from '@/lib/kitchen/places'
@@ -175,6 +176,8 @@ export interface StorageListBodyProps<T extends StoredItem> {
   items: readonly T[]
   today: string
   palette: WallPalette
+  /** What the wall draws in each place, for the headings' sprites (issue #794). */
+  stock?: KitchenStock | null
   /** Prefix for heading ids, unique to the sheet. */
   idPrefix: string
   filtersActive: boolean
@@ -191,6 +194,7 @@ export function StorageListBody<T extends StoredItem>({
   items,
   today,
   palette,
+  stock = null,
   idPrefix,
   filtersActive,
   onClearFilters,
@@ -264,7 +268,7 @@ export function StorageListBody<T extends StoredItem>({
               style={{ borderColor: PIXEL_INK, background: 'var(--color-bg)' }}
             >
               <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center">
-                <PlaceSprite place={def.key} palette={palette} />
+                <PlaceSprite place={def.key} palette={palette} stock={stock} />
               </span>
               {def.label} <span className="text-[13px] font-extrabold tabular-nums">{count}</span>
             </h3>

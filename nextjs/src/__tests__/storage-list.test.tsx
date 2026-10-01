@@ -244,14 +244,14 @@ describe('List: filters', () => {
 describe('List: resolving one item', () => {
   it('an item that needs using has a "Cook this" link to a recipe that uses it', () => {
     render(<Harness />)
-    const link = within(rowOf(/^Romaine/)).getByRole('link', { name: 'Cook this romaine' })
+    const link = within(rowOf(/^Romaine/)).getByRole('link', { name: 'Cook something with romaine' })
     expect(link).toHaveAttribute('href', cookThisHref('romaine', '2026-10-01'))
   })
 
   it('an expired item has no "Cook this" (nothing to cook), only Used up / Tossed', () => {
     render(<Harness />)
     const row = rowOf(/^Old Yogurt/)
-    expect(within(row).queryByRole('link', { name: /Cook this/ })).not.toBeInTheDocument()
+    expect(within(row).queryByRole('link', { name: /Cook something with/ })).not.toBeInTheDocument()
     expect(within(row).getByRole('button', { name: /Mark old yogurt as used up/i })).toBeInTheDocument()
   })
 

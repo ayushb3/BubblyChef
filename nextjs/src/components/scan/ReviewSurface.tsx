@@ -1,301 +1,283 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
 import type { ScannedItemWithId } from '@/lib/scan-helpers'
-import ScannedItemCard from './ScannedItemCard'
+import { scanItemPlace } from '@/lib/scan-helpers'
+import { PLACES, type PlaceDef } from '@/lib/kitchen/places'
+import { getFoodEmoji } from '@/lib/food-emoji'
 import Chip from '@/components/ui/Chip'
-import type { ChipTone } from '@/components/ui/Chip'
+import SpringButton from '@/components/ui/SpringButton'
+import ScannedItemCard from './ScannedItemCard'
+import ItemEditor from './ItemEditor'
 
 /**
- * ReviewSurface — presentation-only tiered receipt review UI.
+ * ReviewSurface: the tiered receipt review, as put-away (issue #753, board A3).
  *
- * Renders the "Ready to Add" / "Needs Review" / "Skipped" tiers, the
- * per-item cards (including the raw-frame eye toggle), the warnings banner,
- * and the confirm affordance. It owns no fetching, no routing, and no upload
- * state machine — everything comes in as props, and every mutation goes back
- * out through the `on*Change`/`onConfirm` callbacks. Callers (the pantry add
- * sheet's scan tab, the `/scan` route) own the upload → processing pipeline
- * and decide what "confirm" actually does (issue #259).
+ * Presentation-only, as it has been since issue #259: no fetching, no routing,
+ * no write. The same three tiers as before, regrouped by where the shopping goes
+ * and worded as putting it away:
+ *
+ *  - the needs-review tier is **"Did I read these right?"**: one card per item
+ *    with the receipt line and "→ <Place>", and Fix / Yes (`ScannedItemCard`);
+ *  - the ready tier is **"Going in"**, grouped by place (Fridge 4, Freezer 1,
+ *    Shelves 2, Basket 2), each group with Edit;
+ *  - the skipped tier is **"Skipped N lines"** (bag fee, tax) with Show, which
+ *    lists them, each with a way to add it back.
+ *
+ * What goes in is Going in, and only that: a line still being asked about stays
+ * out until it is answered (Yes, or Fix then Done, both move it into Going in), as
+ * the issue's "keeps its tiers and its confirm semantics" has it. The host's
+ * confirm key, not this surface, does the writing, and names the count. Skipped
+ * lines never go in unless added back (which asks about them first).
+ *
+ * Every change (Yes, Fix, a moved place, leaving an item out, adding a skipped
+ * line back) goes out whole through `onChange`, so a host that persists the
+ * tiers (the pending put-away record) takes one write per tap.
  */
-export interface ReviewSurfaceProps {
+export interface PutAwayTiers {
   readyToAdd: ScannedItemWithId[]
   needsReview: ScannedItemWithId[]
   skipped: ScannedItemWithId[]
+}
+
+export interface ReviewSurfaceProps extends PutAwayTiers {
   warnings?: string[]
-  onReadyChange: (items: ScannedItemWithId[]) => void
-  onReviewChange: (items: ScannedItemWithId[]) => void
-  onSkippedChange: (items: ScannedItemWithId[]) => void
-  /** Fires only on explicit user confirm — nothing here writes to the DB itself. */
-  onConfirm: (checkedItems: ScannedItemWithId[]) => void
-  isSubmitting: boolean
-  /** When true, hides the built-in confirm button (used when embedded in PantryAddSheet) */
-  hideConfirmButton?: boolean
-  /**
-   * Fires whenever the checked-item set changes (checkbox toggle, item edit,
-   * or dismiss). Lets an embedding parent (e.g. PantryAddSheet, which hides
-   * the built-in confirm button and owns its own footer/confirm) track the
-   * checked-only count and payload without duplicating checkbox state
-   * (issue #406).
-   */
-  onCheckedItemsChange?: (items: ScannedItemWithId[]) => void
+  onChange: (next: PutAwayTiers) => void
+  /** Locks every control (a write is in flight). */
+  disabled?: boolean
 }
 
-// ─── Tier header pill ─────────────────────────────────────────────────────────
-interface TierHeaderProps {
-  label: string
-  emoji: string
-  count: number
-  tone: ChipTone
-  open: boolean
-  onToggle: () => void
+const HEADING =
+  'text-[13px] leading-[18px] font-bold tracking-[0.025em] text-[color:var(--color-text)] uppercase tabular-nums'
+
+function plural(n: number, one: string, many: string): string {
+  return n === 1 ? one : many
 }
 
-function TierHeader({ label, emoji, count, tone, open, onToggle }: TierHeaderProps) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      aria-label={`${label} section, ${count} item${count !== 1 ? 's' : ''}`}
-      className="w-full flex items-center justify-between mb-2 transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] rounded-full"
-    >
-      <Chip tone={tone} size="md" emoji={emoji}>
-        {label} ({count})
-      </Chip>
-      <motion.span
-        animate={{ rotate: open ? 0 : -90 }}
-        transition={{ duration: 0.2 }}
-        className="text-xs text-[var(--color-muted)] pr-1"
-        aria-hidden
-      >
-        ▼
-      </motion.span>
-    </button>
-  )
+function replaceItem(list: ScannedItemWithId[], updated: ScannedItemWithId): ScannedItemWithId[] {
+  return list.map((i) => (i._id === updated._id ? updated : i))
 }
 
-// ─── Tier section ─────────────────────────────────────────────────────────────
-interface TierSectionProps {
-  label: string
-  emoji: string
-  tone: ChipTone
-  items: ScannedItemWithId[]
-  checkedKeys: Set<string>
-  defaultOpen?: boolean
-  onItemChange: (index: number, updated: ScannedItemWithId) => void
-  onItemDismiss: (index: number) => void
-  onCheckedChange: (id: string, checked: boolean) => void
+function without(list: ScannedItemWithId[], id: string): ScannedItemWithId[] {
+  return list.filter((i) => i._id !== id)
 }
 
-function TierSection({
-  label,
-  emoji,
-  tone,
-  items,
-  checkedKeys,
-  defaultOpen = true,
-  onItemChange,
-  onItemDismiss,
-  onCheckedChange,
-}: TierSectionProps) {
-  const [open, setOpen] = useState(defaultOpen)
-
-  return (
-    <div className="mb-4">
-      <TierHeader
-        label={label}
-        emoji={emoji}
-        count={items.length}
-        tone={tone}
-        open={open}
-        onToggle={() => setOpen((o) => !o)}
-      />
-
-      <AnimatePresence initial={false}>
-        {open && items.length > 0 && (
-          <motion.div
-            key="content"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div className="mt-2 space-y-2">
-              {items.map((item, i) => (
-                <ScannedItemCard
-                  key={item._id}
-                  item={item}
-                  index={i}
-                  checked={checkedKeys.has(item._id)}
-                  onChange={(updated) => onItemChange(i, updated)}
-                  onDismiss={() => onItemDismiss(i)}
-                  onCheckedChange={(c) => onCheckedChange(item._id, c)}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {open && items.length === 0 && (
-        <p className="text-xs text-[var(--color-muted)] text-center py-3 opacity-60">
-          All items dismissed
-        </p>
-      )}
-    </div>
-  )
+/** The skipped lines' names, for the one-line summary ("bag fee, tax"). */
+function skippedNames(skipped: ScannedItemWithId[]): string {
+  const names = skipped.map((i) => i.name)
+  return names.length > 3 ? `${names.slice(0, 3).join(', ')}…` : names.join(', ')
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
 export default function ReviewSurface({
   readyToAdd,
   needsReview,
   skipped,
   warnings = [],
-  onReadyChange,
-  onReviewChange,
-  onSkippedChange,
-  onConfirm,
-  isSubmitting,
-  hideConfirmButton = false,
-  onCheckedItemsChange,
+  onChange,
+  disabled = false,
 }: ReviewSurfaceProps) {
-  // Seed: ready_to_add items start checked; needs_review and skipped start unchecked.
-  const initialCheckedKeys = useMemo(() => {
-    return new Set<string>(readyToAdd.map((item) => item._id))
-    // We only want the seed once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Which items have their editor open: a Fix card, or a group in Edit.
+  const [editing, setEditing] = useState<ReadonlySet<string>>(new Set())
+  const [showSkipped, setShowSkipped] = useState(false)
 
-  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(initialCheckedKeys)
+  const tiers: PutAwayTiers = { readyToAdd, needsReview, skipped }
 
-  function toggleKey(id: string, checked: boolean) {
-    setCheckedKeys((prev) => {
+  function setEditingFor(ids: string[], on: boolean) {
+    setEditing((prev) => {
       const next = new Set(prev)
-      if (checked) next.add(id)
-      else next.delete(id)
+      for (const id of ids) {
+        if (on) next.add(id)
+        else next.delete(id)
+      }
       return next
     })
   }
 
-  // Remove an id from the checked set when its item is dismissed.
-  function dismissKey(id: string) {
-    setCheckedKeys((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
+  /** Yes, or Done on a fixed line: the item moves from asked-about into Going in. */
+  function answer(item: ScannedItemWithId) {
+    setEditingFor([item._id], false)
+    onChange({
+      ...tiers,
+      needsReview: without(needsReview, item._id),
+      readyToAdd: [...readyToAdd, item],
     })
   }
 
-  function removeAt(list: ScannedItemWithId[], i: number): ScannedItemWithId[] {
-    return list.filter((_, idx) => idx !== i)
-  }
-  function replaceAt(
-    list: ScannedItemWithId[],
-    i: number,
-    item: ScannedItemWithId,
-  ): ScannedItemWithId[] {
-    return list.map((el, idx) => (idx === i ? item : el))
+  function leaveOut(id: string) {
+    setEditingFor([id], false)
+    onChange({ ...tiers, readyToAdd: without(readyToAdd, id), needsReview: without(needsReview, id) })
   }
 
-  // Collect all currently-visible checked items in tier order for the confirm handler.
-  const checkedItems = useMemo(() => {
-    return [...readyToAdd, ...needsReview, ...skipped].filter((item) => checkedKeys.has(item._id))
-  }, [readyToAdd, needsReview, skipped, checkedKeys])
-
-  const checkedCount = checkedItems.length
-
-  useEffect(() => {
-    onCheckedItemsChange?.(checkedItems)
-    // onCheckedItemsChange is a caller-provided callback; including it would
-    // re-fire this effect whenever the parent re-renders with a new closure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkedItems])
+  const groups: Array<{ place: PlaceDef; items: ScannedItemWithId[] }> = PLACES.map((place) => ({
+    place,
+    items: readyToAdd.filter((i) => scanItemPlace(i) === place.key),
+  })).filter((g) => g.items.length > 0)
 
   return (
-    <div>
-      {/* Warnings banner */}
+    <div className="flex flex-col gap-4">
       {warnings.length > 0 && (
-        <div className="mb-4 px-4 py-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-2xl text-sm space-y-1">
+        <div
+          role="status"
+          className="space-y-1 rounded-xl border-2 border-[color:var(--color-expiring-text)] bg-[var(--color-expiring)] px-3 py-2 text-[13px] font-bold text-[color:var(--color-expiring-text)]"
+        >
           {warnings.map((w, i) => (
             <p key={i}>{w}</p>
           ))}
         </div>
       )}
 
-      {readyToAdd.length > 0 && (
-        <TierSection
-          label="Ready to Add"
-          emoji="✅"
-          tone="fresh"
-          items={readyToAdd}
-          checkedKeys={checkedKeys}
-          defaultOpen={true}
-          onItemChange={(i, updated) => onReadyChange(replaceAt(readyToAdd, i, updated))}
-          onItemDismiss={(i) => {
-            dismissKey(readyToAdd[i]._id)
-            onReadyChange(removeAt(readyToAdd, i))
-          }}
-          onCheckedChange={toggleKey}
-        />
+      {needsReview.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className={HEADING}>Did I read these right? {needsReview.length}</h3>
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {needsReview.map((item, i) => (
+                <ScannedItemCard
+                  key={item._id}
+                  item={item}
+                  index={i}
+                  editing={editing.has(item._id)}
+                  disabled={disabled}
+                  onFix={() => setEditingFor([item._id], !editing.has(item._id))}
+                  onYes={() => answer(item)}
+                  onDone={() => answer(item)}
+                  onChange={(updated) =>
+                    onChange({ ...tiers, needsReview: replaceItem(needsReview, updated) })
+                  }
+                  onLeaveOut={() => leaveOut(item._id)}
+                />
+            ))}
+          </ul>
+        </section>
       )}
 
-      {needsReview.length > 0 && (
-        <TierSection
-          label="Needs Review"
-          emoji="⚠️"
-          tone="expiring"
-          items={needsReview}
-          checkedKeys={checkedKeys}
-          defaultOpen={true}
-          onItemChange={(i, updated) => onReviewChange(replaceAt(needsReview, i, updated))}
-          onItemDismiss={(i) => {
-            dismissKey(needsReview[i]._id)
-            onReviewChange(removeAt(needsReview, i))
-          }}
-          onCheckedChange={toggleKey}
-        />
+      {readyToAdd.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className={HEADING}>Going in {readyToAdd.length}</h3>
+          {groups.map(({ place, items }) => {
+            const ids = items.map((i) => i._id)
+            const groupEditing = items.some((i) => editing.has(i._id))
+            return (
+              <div
+                key={place.key}
+                role="group"
+                aria-label={`${place.label}, ${items.length} ${plural(items.length, 'item', 'items')}`}
+                className={groupEditing ? 'flex flex-col gap-1.5' : 'flex items-start gap-2.5'}
+              >
+                <span
+                  className={`${groupEditing ? '' : 'w-[84px] shrink-0 pt-1 '}text-xs font-extrabold tracking-[0.025em] text-[color:var(--color-text)] uppercase tabular-nums`}
+                >
+                  {place.label} {items.length}
+                </span>
+                {groupEditing ? (
+                  <div className="flex min-w-0 flex-1 flex-col gap-3">
+                    {items.map((item) => (
+                        <div
+                          key={item._id}
+                          className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 pb-2"
+                        >
+                          <p className="pt-2 text-[13px] font-bold text-[color:var(--color-text)]">
+                            <span aria-hidden="true">{getFoodEmoji(item.name, item.category)} </span>
+                            {item.name}
+                          </p>
+                          <ItemEditor
+                            item={item}
+                            disabled={disabled}
+                            onChange={(updated) =>
+                              onChange({ ...tiers, readyToAdd: replaceItem(readyToAdd, updated) })
+                            }
+                            onPlaceChanged={() => setEditingFor([item._id], false)}
+                            onLeaveOut={() => leaveOut(item._id)}
+                          />
+                        </div>
+                    ))}
+                    <div className="flex">
+                      <SpringButton
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setEditingFor(ids, false)}
+                        aria-label={`Done editing ${place.label}`}
+                      >
+                        Done
+                      </SpringButton>
+                    </div>
+                  </div>
+                ) : (
+                  <ul className="m-0 flex min-w-0 flex-1 list-none flex-wrap items-center gap-1.5 p-0">
+                    {items.map((item) => (
+                      <li key={item._id} data-putaway-item={item._id} className="min-w-0 max-w-full">
+                        <Chip tone="muted" emoji={getFoodEmoji(item.name, item.category)}>
+                          {item.name}
+                        </Chip>
+                      </li>
+                    ))}
+                    <li>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setEditingFor(ids, true)}
+                        aria-label={`Edit ${place.label} items`}
+                        className="-my-3 px-1 py-3 text-xs font-extrabold text-[color:var(--color-text)] underline disabled:opacity-60"
+                      >
+                        Edit
+                      </button>
+                    </li>
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </section>
       )}
 
       {skipped.length > 0 && (
-        <TierSection
-          label="Skipped"
-          emoji="⏭️"
-          tone="muted"
-          items={skipped}
-          checkedKeys={checkedKeys}
-          defaultOpen={false}
-          onItemChange={(i, updated) => onSkippedChange(replaceAt(skipped, i, updated))}
-          onItemDismiss={(i) => {
-            dismissKey(skipped[i]._id)
-            onSkippedChange(removeAt(skipped, i))
-          }}
-          onCheckedChange={toggleKey}
-        />
-      )}
-
-      {/* Sticky footer CTA */}
-      {!hideConfirmButton && (
-        <div className="sticky bottom-4 mt-4">
-          <motion.button
-            type="button"
-            onClick={() => onConfirm(checkedItems)}
-            disabled={checkedCount === 0 || isSubmitting}
-            whileHover={{ scale: checkedCount === 0 || isSubmitting ? 1 : 1.02 }}
-            whileTap={{ scale: checkedCount === 0 || isSubmitting ? 1 : 0.96 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-            className="w-full py-4 rounded-full font-bold text-white shadow-lg transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: 'var(--color-primary-dark)' }}
-          >
-            {isSubmitting
-              ? 'Adding…'
-              : checkedCount === 0
-                ? 'No items selected'
-                : `Add ${checkedCount} Item${checkedCount === 1 ? '' : 's'} to Pantry`}
-          </motion.button>
-        </div>
+        <section className="flex flex-col gap-2">
+          <p className="text-xs leading-4 font-bold text-[color:var(--color-text)] tabular-nums">
+            Skipped {skipped.length} {plural(skipped.length, 'line', 'lines')}: {skippedNames(skipped)}.{' '}
+            <button
+              type="button"
+              onClick={() => setShowSkipped((s) => !s)}
+              aria-expanded={showSkipped}
+              aria-label={showSkipped ? 'Hide skipped lines' : 'Show skipped lines'}
+              className="-my-3 px-1 py-3 underline"
+            >
+              {showSkipped ? 'Hide' : 'Show'}
+            </button>
+          </p>
+          {showSkipped && (
+            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {skipped.map((item) => (
+                <li
+                  key={item._id}
+                  className="flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5"
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-[15px] font-bold text-[color:var(--color-text)]">
+                    {item.source_line || item.name}
+                  </span>
+                  {item.price !== null && item.price !== undefined && (
+                    <span className="shrink-0 text-xs font-bold text-[color:var(--color-text)] tabular-nums">
+                      ${item.price.toFixed(2)}
+                    </span>
+                  )}
+                  <SpringButton
+                    variant="secondary"
+                    size="sm"
+                    disabled={disabled}
+                    aria-label={`Add ${item.name}`}
+                    onClick={() =>
+                      onChange({
+                        ...tiers,
+                        skipped: without(skipped, item._id),
+                        needsReview: [...needsReview, item],
+                      })
+                    }
+                  >
+                    Add
+                  </SpringButton>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </div>
   )

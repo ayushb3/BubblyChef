@@ -33,6 +33,7 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 import type { ChatResponse } from '../src/types/chat';
 import { guestUidFromCookies } from './support/guest-auth-cookie';
+import { findItemInStorageSheet } from './support/storage-sheet';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -152,21 +153,30 @@ test.describe('guest walkthrough (issue #518)', () => {
     await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
     expect(guestUid, 'Expected an anonymous Supabase session cookie after landing on /').not.toBeNull();
 
+    // A fresh guest gets the first-run coach-mark tour over the kitchen, and its
+    // full-screen overlay intercepts every tap beneath it. Skip it (it records
+    // onboarding_completed on this guest only, deleted in afterAll) so the
+    // steps below drive the real UI the way a returning visitor would.
+    await page.getByRole('button', { name: 'Skip' }).click({ timeout: 10_000 });
+    await expect(page.getByText("Hi! I'm Bubbles, your kitchen assistant.")).not.toBeVisible({ timeout: 5_000 });
+
     // ── 2. Pantry add (Manual tab), then reload — same UID keeps the item ──
     // Mirrors e2e/smoke/smoke.spec.ts's "add a pantry item through the
     // Manual tab" flow, minus the delete step.
     const itemName = `guest-e2e-${Date.now()}`;
 
-    await page.goto('/pantry?add=type');
+    // The pantry grid is gone (#750): the item is found in the kitchen's
+    // storage sheet, by searching every place for it.
+    await page.goto('/?add=type');
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).toBeVisible();
     await page.getByLabel('Item name').fill(itemName);
     await page.getByRole('button', { name: /Add 1 Item/ }).click();
     await expect(page.getByRole('heading', { name: 'Add to Pantry' })).not.toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(new RegExp(itemName, 'i'))).toBeVisible({ timeout: 10_000 });
+    await expect(await findItemInStorageSheet(page, itemName)).toBeVisible({ timeout: 10_000 });
 
     await page.reload();
     await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByText(new RegExp(itemName, 'i'))).toBeVisible({ timeout: 10_000 });
+    await expect(await findItemInStorageSheet(page, itemName)).toBeVisible({ timeout: 10_000 });
 
     // ── 3. Save a recipe via the import flow (stubbed fetch, real save) ────
     await page.route('**/api/recipes/import', async (route) => {
@@ -181,7 +191,8 @@ test.describe('guest walkthrough (issue #518)', () => {
     await expect(page).not.toHaveURL(/\/login/);
     await page.getByRole('button', { name: 'Import recipe from URL' }).click();
     await expect(page.getByRole('heading', { name: /Import from URL/ })).toBeVisible();
-    await page.getByPlaceholder(/https:\/\/www\.allrecipes\.com/).fill(IMPORT_URL);
+    // The field now takes a recipe page or a YouTube link (#528).
+    await page.getByPlaceholder('Recipe page or YouTube link...').fill(IMPORT_URL);
     await page.getByRole('button', { name: 'Import', exact: true }).click();
 
     // RecipeImportModal hands off to RecipeEditModal (review/edit before the
