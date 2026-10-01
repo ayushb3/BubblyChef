@@ -10,7 +10,7 @@
  */
 
 import type { GroceryLine, GrocerySource, ManualLineInput } from '@/lib/grocery'
-import { addManualLines } from '@/lib/grocery'
+import { addManualLines, groceryFoodKey } from '@/lib/grocery'
 
 const PREFIX = 'bubblychef:grocery:'
 const VERSION = 1
@@ -101,6 +101,25 @@ export function addToGroceryList(
   const next = addManualLines(loadGroceryLines(userId), items)
   saveGroceryLines(userId, next)
   return next
+}
+
+/**
+ * Put a meal's or recipe's missing items on the list without disturbing what
+ * the user has already done with it (issue #787). `addToGroceryList` /
+ * `addManualLines` un-ticks a food that is already listed, which is right for
+ * a pantry item's "Add to list" (the user just asked for it again). A ticked
+ * line from a recipe's missing items means it was bought at the shop, so it is
+ * left ticked; unticked and new names are added (or adopted) as usual. Writes
+ * nothing when every name is already ticked.
+ */
+export function addMissingToGroceryList(userId: string, names: string[]): void {
+  const ticked = new Set(
+    loadGroceryLines(userId)
+      .filter((l) => l.checked)
+      .map((l) => l.key)
+  )
+  const fresh = names.filter((n) => !ticked.has(groceryFoodKey(n)))
+  if (fresh.length > 0) addToGroceryList(userId, fresh)
 }
 
 /** Call `callback` whenever the saved list may have changed, in this tab or
