@@ -20,7 +20,7 @@ import { scanItemPlace, withScanPlace, type ScannedItemWithId } from '@/lib/scan
 import SpringButton from '@/components/ui/SpringButton'
 
 const FIELD =
-  'min-h-[44px] w-full rounded-xl border-2 border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] transition-colors focus:border-[color:var(--color-text)] focus-visible:outline-none disabled:opacity-60'
+  'min-h-[44px] rounded-xl border-2 border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] transition-colors focus:border-[color:var(--color-text)] focus-visible:outline-none disabled:opacity-60'
 
 export interface ItemEditorProps {
   item: ScannedItemWithId

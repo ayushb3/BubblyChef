@@ -155,9 +155,11 @@ export default function ReviewSurface({
                 key={place.key}
                 role="group"
                 aria-label={`${place.label}, ${items.length} ${plural(items.length, 'item', 'items')}`}
-                className="flex items-start gap-2.5"
+                className={groupEditing ? 'flex flex-col gap-1.5' : 'flex items-start gap-2.5'}
               >
-                <span className="w-[84px] shrink-0 pt-1 text-xs font-extrabold tracking-[0.025em] text-[color:var(--color-text)] uppercase tabular-nums">
+                <span
+                  className={`${groupEditing ? '' : 'w-[84px] shrink-0 pt-1 '}text-xs font-extrabold tracking-[0.025em] text-[color:var(--color-text)] uppercase tabular-nums`}
+                >
                   {place.label} {items.length}
                 </span>
                 {groupEditing ? (
