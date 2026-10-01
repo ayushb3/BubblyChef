@@ -81,7 +81,7 @@ describe('meal page servings scaling (issue #650)', () => {
     fetchMeal.mockResolvedValue(BASE_MEAL)
     renderPage()
 
-    expect(await screen.findByText('2 lb chicken thighs')).toBeInTheDocument()
+    expect(await screen.findByText('2 lb')).toBeInTheDocument()
   })
 
   it('scales displayed quantities after the servings stepper increases servings', async () => {
@@ -90,7 +90,7 @@ describe('meal page servings scaling (issue #650)', () => {
     updateMeal.mockResolvedValue({ ...BASE_MEAL, servings: 4 })
     renderPage()
 
-    await screen.findByText('2 lb chicken thighs')
+    await screen.findByText('2 lb')
     // Durations never scale (issue #652 review, nit) — capture the timeline
     // total before the servings change so the assertion below actually
     // exercises that, not just quantities.
@@ -103,8 +103,8 @@ describe('meal page servings scaling (issue #650)', () => {
     // value, so the rendered scale reflects exactly what the mutation
     // returned — proving the page re-derives the scale from fresh query
     // data rather than computing it once from the initial fetch.
-    expect(await screen.findByText('4 lb chicken thighs')).toBeInTheDocument()
-    expect(screen.queryByText('2 lb chicken thighs')).not.toBeInTheDocument()
+    expect(await screen.findByText('4 lb')).toBeInTheDocument()
+    expect(screen.queryByText('2 lb')).not.toBeInTheDocument()
     // Same dish, same steps, same total — the timeline shouldn't have moved
     // just because servings did.
     expect(screen.getByText(/Timeline —/).textContent).toBe(timelineBefore)
@@ -114,7 +114,7 @@ describe('meal page servings scaling (issue #650)', () => {
     fetchMeal.mockResolvedValue({ ...BASE_MEAL, servings: 1 })
     renderPage()
 
-    await screen.findByText('1 lb chicken thighs')
+    await screen.findByText('1 lb')
     expect(screen.getByRole('button', { name: 'Decrease servings' })).toBeDisabled()
   })
 })

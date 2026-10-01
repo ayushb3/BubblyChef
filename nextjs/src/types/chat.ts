@@ -575,6 +575,78 @@ export function getSavedRecipeMatches(response?: ChatResponse | null): SavedReci
   })
 }
 
+/**
+ * One saved (non-draft) meal the lookup matched, as
+ * `saved_recipe_lookup_response` puts it on `metadata.saved_meal_matches`
+ * (issue #760). `id` is the real `meals` row id, so the card opens
+ * `/meals/[id]` directly and never creates a second meal.
+ */
+export interface SavedMealMatch {
+  id: string
+  title: string
+  description?: string | null
+  servings?: number | null
+  /** Main first, then sides. */
+  dishes: Array<{
+    role: 'main' | 'side'
+    position: number
+    recipe_id?: string | null
+    title?: string | null
+  }>
+}
+
+/**
+ * Extract saved-meal matches from a ChatResponse's metadata. Same contract as
+ * `getSavedRecipeMatches`: empty when absent or malformed, and a row missing
+ * `id` or `title` is dropped. A malformed dish is dropped from its meal rather
+ * than failing the card.
+ */
+export function getSavedMealMatches(response?: ChatResponse | null): SavedMealMatch[] {
+  const raw = response?.metadata?.saved_meal_matches
+  if (!Array.isArray(raw)) return []
+  const matches: SavedMealMatch[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const m = item as Record<string, unknown>
+    if (typeof m.id !== 'string' || !m.id || typeof m.title !== 'string' || !m.title) continue
+    const dishes = Array.isArray(m.dishes)
+      ? m.dishes.filter((d): d is SavedMealMatch['dishes'][number] => {
+          if (!d || typeof d !== 'object') return false
+          const dish = d as Record<string, unknown>
+          return (dish.role === 'main' || dish.role === 'side') && typeof dish.position === 'number'
+        })
+      : []
+    matches.push({
+      id: m.id,
+      title: m.title,
+      description: typeof m.description === 'string' ? m.description : null,
+      servings: typeof m.servings === 'number' ? m.servings : null,
+      dishes,
+    })
+  }
+  return matches
+}
+
+/**
+ * The shape `CompactMealCard` renders, for a meal that already exists. Only
+ * title and dishes are drawn; the rest is the empty value the card's type needs.
+ */
+export function savedMealToProposal(match: SavedMealMatch): MealProposal {
+  return {
+    proposal_type: 'meal',
+    title: match.title,
+    servings: match.servings ?? 0,
+    constraints: { kitchen_limits: [], exclusive_tags: [], recipe_constraints: {} },
+    dishes: match.dishes.map((dish) => ({
+      role: dish.role,
+      position: dish.position,
+      recipe_id: dish.recipe_id ?? null,
+      recipe: { title: dish.title ?? undefined },
+    })),
+    missing_ingredients: [],
+  }
+}
+
 // ─── Confirm-choice helpers ───────────────────────────────────────────────────
 
 export interface ConfirmOption {

@@ -452,6 +452,7 @@ BUBBLY_SUPABASE_SECRET_KEY=...          # NOT ..._SERVICE_ROLE_KEY — see note 
 BUBBLY_SUPABASE_JWT_SECRET=...
 BUBBLY_GEMINI_API_KEY=...
 BUBBLY_GEMINI_MODEL=gemini-3.1-flash-lite    # optional
+BUBBLY_GEMINI_FALLBACK_API_KEY=...      # optional — second Gemini key (its own Google project + spend cap), tried only after the primary fails with quota/auth/rate-limit, before Ollama; unset = no second provider (#737)
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5
@@ -479,7 +480,7 @@ the same credential differently.
   fixing the baselined errors themselves is issue #128
 - `tenacity` is imported by `tools/llm_client.py` but not declared in
   `ai-service/pyproject.toml`; it resolves transitively through langchain — issue #130
-- Pantry lots (#356): each add of a food is its own row with its own expiry, and the cook matcher sums them through the base unit. Chat `use` spends across lots soonest-expiry first and `remove` clears every lot (#711); chat `update` still edits one lot (the soonest stocked); the pantry list shows the lots as separate rows
+- Pantry lots (#356): each add of a food is its own row with its own expiry, and the cook matcher sums them through the base unit. Chat `use` spends across lots in the cook deduction's order, fresh lots soonest-expiry first and expired lots only after them (#711, #767), and `remove` clears every lot (#711); cook deduction spends fresh lots first and expired lots only after them (#756); chat `update` still edits one lot (the soonest stocked); the pantry list shows the lots as separate rows
 - `ruff` is pinned `<0.16`; the newer default rule set reports 144 findings — issue #129
 - No unit conversion (can't deduct "3 eggs" from "1 dozen eggs") — issue #6
 - `mutating` state in RecipeBook — buttons not yet `disabled={mutating}`

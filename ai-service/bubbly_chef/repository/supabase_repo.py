@@ -16,7 +16,7 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
-from bubbly_chef.domain.lots import lot_base, lot_food_key, soonest_first_key
+from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
     normalize_food_name,
     normalize_to_base_unit,
@@ -138,6 +138,15 @@ _QUERY_STOPWORDS = frozenset(
         "one",
         "another",
     }
+)
+
+
+# Words that name the *occasion* a saved meal was planned for rather than any
+# dish in it. "make that pasta dinner again" asks for a saved meal about pasta;
+# "dinner" says meal, it isn't a dish to find. Stripped from the query side of
+# `search_saved_meals` only -- a saved *recipe* really can be called "Dinner Rolls".
+_MEAL_OCCASION_WORDS = frozenset(
+    {"meal", "meals", "dinner", "dinners", "lunch", "lunches", "supper", "tonight"}
 )
 
 
@@ -336,9 +345,10 @@ def _plan_pantry_use(
 def _plan_use_across_lots(
     lots: list[PantryItem], name: str, action: dict[str, Any]
 ) -> tuple[list[tuple[PantryItem, _PantryUsePlan]], str | None]:
-    """Plan a chat `use` over every lot of a food, soonest expiry first (#711).
+    """Plan a chat `use` over every lot of a food, fresh lots first (#711, #767).
 
-    `lots` arrive soonest-first with empty rows last. Each stocked lot is used
+    `lots` arrive in `fresh_first_key` order: fresh lots soonest expiry first,
+    expired lots after them, empty rows last. Each stocked lot is used
     up in turn until the amount is covered, and the lot where it runs out keeps
     the rest (`_plan_pantry_use`, so the display amount and base stay in step).
     Using more than every lot holds clears them all, as it does for one lot.
@@ -491,7 +501,10 @@ class SupabaseRepository:
         return min(lots, key=soonest_first_key)
 
     async def find_food_lots(self, user_id: str, name: str) -> list[PantryItem]:
-        """Every lot of the food `name` names, soonest expiry first (#711).
+        """Every lot of the food `name` names, in the order a use spends them (#711, #767).
+
+        Fresh lots soonest expiry first, expired lots after them (`fresh_first_key`,
+        the cook deduction's order).
 
         Starts from the row `find_similar_item` finds and adds the user's other
         rows of the same food (same synonym-normalised name, as the cook matcher
@@ -520,7 +533,7 @@ class SupabaseRepository:
                 lots[item.id] = (item, dict(row))
         if anchor.id not in lots:
             lots[anchor.id] = (anchor, self._pantry_item_row(user_id, anchor))
-        return sorted(lots.values(), key=lambda pair: soonest_first_key(pair[0]))
+        return sorted(lots.values(), key=lambda pair: fresh_first_key(pair[0]))
 
     def _pantry_item_row(self, user_id: str, item: PantryItem) -> dict[str, Any]:
         """The insert payload for `item` as it is now, keeping its id and dates."""
@@ -854,7 +867,8 @@ class SupabaseRepository:
 
                 elif action_type == "use":
                     # #711: a food can sit in several lots, so a use is spread over
-                    # them (soonest expiry first) instead of acting on one row.
+                    # them (fresh lots soonest expiry first, expired ones last, #767) instead of
+                    # acting on one row.
                     lot_rows = await self._food_lot_rows(user_id, name)
                     if not lot_rows:
                         _record_failure(index, f"Item not found: {name}")
@@ -1276,10 +1290,10 @@ class SupabaseRepository:
 
         Takes from the named row first. When `deduct_qty` is more than that row
         holds, the remainder goes to the food's other lots (same synonym-normalised
-        name, same base unit, with stock), soonest expiry first and undated last
-        (#356). The cook matcher names the soonest lot and reports the total
-        across all of them, so one confirmed deduction consumes lots in expiry
-        order. Returns whether the named row was updated; see
+        name, same base unit, with stock): fresh lots soonest expiry first and
+        undated last (#356), expired lots only after every fresh one (#756). The
+        cook matcher names the first of those lots and reports the total across
+        all of them, so one confirmed deduction consumes lots in that order. Returns whether the named row was updated; see
         `_deduct_from_row` for what that means.
         """
         applied, overflow, food, base_unit = await self._deduct_from_row(
@@ -1292,7 +1306,8 @@ class SupabaseRepository:
     async def _carry_deduction_to_lots(
         self, user_id: str, item_id: str, food: str, base_unit: str, remainder: float
     ) -> None:
-        """Spend `remainder` (in `base_unit`) on the other lots of `food`, soonest first."""
+        """Spend `remainder` (in `base_unit`) on the other lots of `food`, fresh lots
+        soonest-expiry first, expired lots only after them (#756)."""
         result = self.client.table("pantry_items").select("*").eq("user_id", user_id).execute()
         lots: list[tuple[PantryItem, float]] = []
         for row in _as_rows(result.data):
@@ -1305,7 +1320,7 @@ class SupabaseRepository:
             if qty is None or qty <= 0 or unit != base_unit:
                 continue
             lots.append((item, qty))
-        lots.sort(key=lambda lot: soonest_first_key(lot[0]))
+        lots.sort(key=lambda lot: fresh_first_key(lot[0]))
         for item, qty in lots:
             if remainder <= _LOT_EPSILON:
                 return
@@ -1673,6 +1688,82 @@ class SupabaseRepository:
             for row in _as_rows(result.data or [])
             if row.get("servings") is not None and row.get("last_cooked_at") is not None
         ]
+
+    async def search_saved_meals(
+        self, user_id: str, query: str, limit: int = 3
+    ) -> list[dict[str, Any]]:
+        """Rank a user's *saved* meals against a free-text lookup (issue #760).
+
+        Mirrors `search_saved_recipes` for the `meals` table: scoped
+        `.eq("user_id", user_id)` and `.eq("is_draft", False)`, so another
+        user's meal, or a meal the user opened but never saved, can never
+        appear. Each result is the raw `meals` row plus a `dishes` list
+        (`{"role", "position", "recipe_id", "title"}`, main first), read in the
+        same query through the `meal_dishes -> recipes(title)` embed.
+
+        Matching is against the meal's title, description and dish titles
+        together. Meal-occasion words ("dinner", "meal") are dropped from the
+        query, since they say "a meal" rather than naming a dish; every
+        remaining query token must appear somewhere in the meal, so a
+        two-word ask is never padded with meals that share only one word. A
+        query that is *only* occasion words ("show me my saved meals") returns
+        the most recently cooked, then most recently created, meals instead.
+        Ranked by title hits, then dish-title hits, then recency.
+
+        Raises on a query error (unlike `get_recent_meal_servings`): the caller
+        must tell "no such meal" from "couldn't look".
+        """
+        tokens = _tokenize_query(query)
+        if not tokens:
+            return []
+        wanted = {t for t in tokens if t not in _MEAL_OCCASION_WORDS}
+
+        result = (
+            self.client.table("meals")
+            .select(
+                "id,title,description,servings,last_cooked_at,created_at,"
+                "meal_dishes(role,position,recipe_id,recipes(title))"
+            )
+            .eq("user_id", user_id)
+            .eq("is_draft", False)
+            .eq("meal_dishes.user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(200)
+            .execute()
+        )
+
+        scored: list[tuple[tuple[int, int, str, str], dict[str, Any]]] = []
+        for row in _as_rows(result.data or []):
+            raw_dishes = row.get("meal_dishes")
+            dishes: list[dict[str, Any]] = []
+            for raw in _as_rows(raw_dishes) if isinstance(raw_dishes, list) else []:
+                recipe = raw.get("recipes")
+                dishes.append(
+                    {
+                        "role": raw.get("role"),
+                        "position": raw.get("position"),
+                        "recipe_id": str(raw["recipe_id"]) if raw.get("recipe_id") else None,
+                        "title": recipe.get("title") if isinstance(recipe, dict) else None,
+                    }
+                )
+            dishes.sort(key=lambda d: d["position"] if isinstance(d["position"], int) else 99)
+
+            title_tokens = set(_tokenize(str(row.get("title") or "")))
+            dish_tokens = {t for d in dishes for t in _tokenize(str(d.get("title") or ""))}
+            desc_tokens = set(_tokenize(str(row.get("description") or "")))
+            if wanted and not wanted <= (title_tokens | dish_tokens | desc_tokens):
+                continue
+
+            meal = {k: v for k, v in row.items() if k != "meal_dishes"}
+            meal["dishes"] = dishes
+            recency = str(row.get("last_cooked_at") or "")
+            created = str(row.get("created_at") or "")
+            scored.append(
+                ((len(wanted & title_tokens), len(wanted & dish_tokens), recency, created), meal)
+            )
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [meal for _score, meal in scored[:limit]]
 
     async def get_meal_with_dishes(self, user_id: str, meal_id: str) -> dict[str, Any] | None:
         """Return `{"meal": <meals row>, "dishes": [...]}` for one meal, or

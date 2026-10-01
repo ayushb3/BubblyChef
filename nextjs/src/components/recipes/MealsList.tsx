@@ -1,8 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
+import RecipeCard from '@/components/recipes/RecipeCard'
 import EmptyState from '@/components/ui/EmptyState'
 import { fetchMeals } from '@/lib/api/meals'
 
@@ -45,25 +45,16 @@ export default function MealsList() {
   }
 
   return (
-    <ul className="flex flex-col gap-2 w-full max-w-md mx-auto px-2" role="list" aria-label="Saved meals">
+    <ul className="flex flex-col gap-3 w-full max-w-md mx-auto px-2" role="list" aria-label="Saved meals">
       {meals.map((meal) => (
         <li key={meal.id}>
-          <Link
+          <RecipeCard
+            variant="compact"
             href={`/meals/${meal.id}`}
-            className="block rounded-2xl px-4 py-3 transition-colors hover:bg-[var(--color-bg)]"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-          >
-            <p
-              className="font-extrabold text-sm"
-              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-            >
-              {meal.title}
-            </p>
-            <p className="text-xs mt-1" style={{ color: 'var(--color-muted)', fontFamily: 'Nunito, sans-serif' }}>
-              {meal.dishes.map((d) => d.title).filter(Boolean).join(' · ') || 'No dishes'}
-              {' · '}Serves {meal.servings}
-            </p>
-          </Link>
+            title={meal.title}
+            dishes={meal.dishes.map((d) => d.title).filter((t): t is string => Boolean(t))}
+            servings={meal.servings}
+          />
         </li>
       ))}
     </ul>

@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import Chip from '@/components/ui/Chip'
+import SpringButton from '@/components/ui/SpringButton'
+import BubblesCounter from '@/components/ui/BubblesCounter'
 import { tagToTone } from '@/lib/tag-tone'
 
 const ALL_TONES = ['primary', 'accent', 'fresh', 'expiring', 'expired', 'muted'] as const
@@ -23,6 +25,7 @@ const META_CHIPS = [
 export default function ChipDemo() {
   const [selectedTone, setSelectedTone] = useState<string | null>(null)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const [balance, setBalance] = useState(240)
 
   return (
     <div className="min-h-screen p-8 max-w-xl mx-auto space-y-10"
@@ -173,6 +176,54 @@ export default function ChipDemo() {
           ].map(({ label, tone }) => (
             <Chip key={label} tone={tone} onClick={() => {}}>{label}</Chip>
           ))}
+        </div>
+      </section>
+
+      {/* Signature foundations (issue #741): keycap, food tag, bubbles counter */}
+      <section className="space-y-3" data-testid="signature-keycaps">
+        <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Keycap button
+        </h2>
+        <div className="grid grid-cols-2 gap-3">
+          <SpringButton>Plan dinner</SpringButton>
+          <SpringButton variant="secondary">Not now</SpringButton>
+          <SpringButton disabled>Plan dinner</SpringButton>
+          <SpringButton variant="secondary" disabled>Not now</SpringButton>
+          <SpringButton loading>Planning…</SpringButton>
+          <SpringButton variant="secondary" loading>Saving…</SpringButton>
+          <SpringButton variant="danger">Delete</SpringButton>
+          <SpringButton variant="danger" disabled>Delete</SpringButton>
+        </div>
+        <div className="flex gap-3 items-center">
+          <SpringButton size="sm" variant="secondary">Fix</SpringButton>
+          <SpringButton size="sm">Yes</SpringButton>
+        </div>
+        <SpringButton fullWidth>Put away 11 items</SpringButton>
+        <SpringButton fullWidth variant="secondary">Add to the fridge</SpringButton>
+      </section>
+
+      <section className="space-y-3" data-testid="signature-food-tags">
+        <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Food tag (expiry)
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <Chip emoji="🍋">Lemons</Chip>
+          <Chip emoji="🥬" expiresInDays={0}>Romaine</Chip>
+          <Chip emoji="🍞" expiresInDays={1}>Bread</Chip>
+          <Chip emoji="🥛" expiresInDays={3}>Milk</Chip>
+          <Chip emoji="🧀" expiresInDays={9}>Feta</Chip>
+          <Chip emoji="🍌" expiresInDays={-1}>Bananas</Chip>
+        </div>
+      </section>
+
+      <section className="space-y-3" data-testid="signature-counter">
+        <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Bubbles counter
+        </h2>
+        <div className="flex items-center gap-6 pl-16">
+          <BubblesCounter value={balance} testId="demo-counter" />
+          <SpringButton size="sm" onClick={() => setBalance((b) => b + 12)}>Earn 12</SpringButton>
+          <SpringButton size="sm" variant="secondary" onClick={() => setBalance((b) => Math.max(0, b - 12))}>Spend 12</SpringButton>
         </div>
       </section>
 

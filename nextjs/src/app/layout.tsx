@@ -38,6 +38,22 @@ const quicksand = localFont({
   display: "swap",
 });
 
+// --- issue #741: pixel lettering (world-only text) ---------------------------
+// Pixelify Sans-Variable.woff2 (fvar weight axis 400-700; latin subset), the
+// same self-hosting rule as the two faces above (no Google Fonts fetch in
+// production). Exposed as the `font-pixel` utility (see globals.css). Re-verify
+// with `nextjs/scripts/fetch-fonts.sh`. OFL text in ./fonts/pixelify-sans/OFL.txt.
+//   css2 request: https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&display=swap
+//   gstatic file: https://fonts.gstatic.com/s/pixelifysans/v3/CHylV-3HFUT7aC4iv1TxGDR9Jn0Eiw.woff2
+//   sha256:       4a5633a0c9c1b73abd133a56d3716c2d8df2ed03cb987346f72194aeb224f382
+const pixelify = localFont({
+  src: "./fonts/pixelify-sans/PixelifySans-Variable.woff2",
+  variable: "--font-pixelify",
+  weight: "400 700",
+  display: "swap",
+});
+// --- end issue #741 -----------------------------------------------------------
+
 export const metadata: Metadata = {
   title: "BubblyChef",
   description: "AI-powered pantry & recipe assistant",
@@ -53,7 +69,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${nunito.variable} ${quicksand.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${nunito.variable} ${quicksand.variable} ${pixelify.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         {/* Flash-prevention: apply saved theme before first paint to avoid palette flicker */}
         <script

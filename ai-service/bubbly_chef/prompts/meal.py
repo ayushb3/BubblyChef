@@ -9,7 +9,7 @@ the option-stage prompt so `MealOptionsLLMResult.follow_ups` comes back on
 the one call that already runs, and `MEAL_READY_FOLLOW_UPS_RULES` is
 appended to exactly one dish-expansion prompt per pick turn (the main) for
 the same reason -- no extra model call either way. Edits here are
-CODEOWNERS-gated: prompt wording changes model behavior even though the test
+fresh-context reviewed and `verify`-checked: prompt wording changes model behavior even though the test
 suite can stay green.
 
 Issue #651 PR B ("Make it a meal") adds two constants used only when a fixed

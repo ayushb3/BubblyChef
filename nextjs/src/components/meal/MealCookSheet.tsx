@@ -9,10 +9,9 @@
  * `confirm_in_progress`, and navigating away on success.
  */
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import BubblesMascot from '@/components/ui/BubblesMascot'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 import {
   CookReviewBody,
   CookDeductionSummary,
@@ -111,7 +110,6 @@ export default function MealCookSheet({
 }: MealCookSheetProps) {
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [expiredDismissed, setExpiredDismissed] = useState(false)
-  const panelRef = useRef<HTMLDivElement>(null)
 
   // Code review, round 1: while a confirm is in flight, ✕/backdrop/Escape
   // must not close the sheet — closing re-arms `open`, so a re-opened sheet
@@ -129,7 +127,6 @@ export default function MealCookSheet({
     if (state === 'success' && hasSkipped) onBackToMeal()
     else onClose()
   }
-  useModalFocusTrap(open, guardedClose, panelRef)
 
   // With the notice showing there is no redirect, so Back to meal is the next
   // action: move focus to it as the success-with-notice state appears.
@@ -173,201 +170,136 @@ export default function MealCookSheet({
   }
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={(e: MouseEvent<HTMLDivElement>) => {
-            if (e.target === e.currentTarget) guardedClose()
-          }}
-        >
-          <motion.div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="meal-cook-sheet-title"
-            tabIndex={-1}
-            data-testid="meal-cook-sheet"
-            className="w-full max-w-md mx-2 mb-4 sm:mb-0 rounded-2xl overflow-hidden flex flex-col outline-none"
-            style={{
-              background: 'var(--color-surface)',
-              boxShadow: '0 8px 32px color-mix(in srgb, var(--color-primary) 25%, transparent)',
-              maxHeight: '85vh',
-            }}
-            initial={{ y: 60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 60, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          >
-            {/* Header */}
-            <div
-              className="px-5 py-4 flex items-center justify-between flex-shrink-0 border-b border-[var(--color-border)]"
-              style={{ background: 'var(--color-bg)' }}
-            >
-              <div>
-                <h2
-                  id="meal-cook-sheet-title"
-                  className="text-base font-extrabold text-[var(--color-text)]"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
-                >
-                  Update pantry
-                </h2>
-                <p
-                  className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-1"
-                  style={{ fontFamily: 'Nunito, sans-serif' }}
-                >
-                  {mealTitle}
-                </p>
-              </div>
+    <PixelSheet
+      open={open}
+      onClose={guardedClose}
+      closeDisabled={state === 'confirming'}
+      title="Update pantry"
+      titleId="meal-cook-sheet-title"
+      subtitle={mealTitle}
+      testId="meal-cook-sheet"
+      footer={
+        state === 'review' || state === 'confirming' ? (
+          <div className="flex flex-col gap-2.5">
+            {summary && <CookDeductionSummary summary={summary} mode="confirm" />}
+
+            <div className="flex gap-2">
               <button
                 onClick={guardedClose}
                 disabled={state === 'confirming'}
-                className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xl leading-none px-1 min-h-[44px] min-w-[44px] disabled:opacity-50"
-                aria-label="Close"
+                className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
+                style={{ fontFamily: 'Nunito, sans-serif' }}
               >
-                ✕
+                Cancel
               </button>
-            </div>
-
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {state === 'loading' && (
-                <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 py-8">
-                  <BubblesMascot state="thinking" size={64} />
-                  <div
-                    className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin motion-reduce:animate-none shrink-0"
-                    style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
-                  />
-                  <p
-                    className="text-sm font-semibold text-[var(--color-text)]"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Checking your pantry against the whole meal…
-                  </p>
-                </div>
-              )}
-
-              {state === 'error' && (
-                <div className="py-8 text-center" role="alert">
-                  <p className="text-sm font-semibold text-red-500" style={{ fontFamily: 'Nunito, sans-serif' }}>
-                    {errorMessage || 'Something went wrong. Please try again.'}
-                  </p>
-                </div>
-              )}
-
-              {state === 'success' && (
-                <div className="py-8 text-center flex flex-col items-center gap-3">
-                  <BubblesMascot state="celebrate" size={80} />
-                  <p
-                    className="text-sm font-extrabold text-[var(--color-text)]"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Pantry updated!
-                  </p>
-                  {hasSkipped && skipped && (
-                    <>
-                      <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} total={skipped.total} />
-                      <button
-                        type="button"
-                        ref={backToMealRef}
-                        onClick={onBackToMeal}
-                        className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                        style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                        data-testid="meal-cook-sheet-back-to-meal"
-                      >
-                        Back to meal
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {(state === 'review' || state === 'confirming') && proposal && (
-                <CookReviewBody
-                  proposal={proposal}
-                  overrides={overrides}
-                  onOverrideChange={(key, value) =>
-                    setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
-                  }
-                  expiredDismissed={expiredDismissed}
-                  onDismissExpired={() => setExpiredDismissed(true)}
-                  sourceNote={meaLineSourceNote}
-                  missingSourceNote={missingSourceNote}
-                  expiredHeading="Expired ingredients in this meal"
-                />
-              )}
-            </div>
-
-            {/* Footer actions */}
-            {(state === 'review' || state === 'confirming') && (
-              <div
-                className="px-5 py-3 flex flex-col gap-2.5 flex-shrink-0 border-t border-[var(--color-border)]"
-                style={{ background: 'var(--color-bg)' }}
+              <button
+                onClick={handleConfirm}
+                disabled={state === 'confirming'}
+                /* Demoted to a secondary treatment while rows are unresolved,
+                   same pattern as CookModal's "Cook anyway" (#245). */
+                className={[
+                  'flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
+                  hasUnresolved
+                    ? 'border-2 border-[var(--color-primary-dark)] text-[var(--color-primary-dark)]'
+                    : 'text-white',
+                ].join(' ')}
+                style={{
+                  background: hasUnresolved ? 'transparent' : 'var(--color-primary-dark)',
+                  fontFamily: 'Nunito, sans-serif',
+                }}
               >
-                {summary && <CookDeductionSummary summary={summary} mode="confirm" />}
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={guardedClose}
-                    disabled={state === 'confirming'}
-                    className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold border border-[var(--color-border)] text-[var(--color-muted)] active:scale-95 transition-transform disabled:opacity-50"
-                    style={{ fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirm}
-                    disabled={state === 'confirming'}
-                    /* Demoted to a secondary treatment while rows are unresolved,
-                       same pattern as CookModal's "Cook anyway" (#245). */
-                    className={[
-                      'flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold active:scale-95 transition-transform disabled:opacity-50',
-                      hasUnresolved
-                        ? 'border-2 border-[var(--color-primary-dark)] text-[var(--color-primary-dark)]'
-                        : 'text-white',
-                    ].join(' ')}
-                    style={{
-                      background: hasUnresolved ? 'transparent' : 'var(--color-primary-dark)',
-                      fontFamily: 'Nunito, sans-serif',
-                    }}
-                  >
-                    {state === 'confirming' ? 'Saving...' : hasUnresolved ? 'Update anyway' : 'Update pantry'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {state === 'error' && (
-              <div
-                className="px-5 py-3 flex flex-shrink-0 border-t border-[var(--color-border)]"
-                style={{ background: 'var(--color-bg)' }}
+                {state === 'confirming' ? 'Saving...' : hasUnresolved ? 'Update anyway' : 'Update pantry'}
+              </button>
+          </div>
+          </div>
+        ) : state === 'error' ? (
+          <div className="flex">
+            {errorKind ? (
+              <button
+                onClick={onBackToMeal}
+                className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
               >
-                {errorKind ? (
-                  <button
-                    onClick={onBackToMeal}
-                    className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                    style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Back to meal
-                  </button>
-                ) : (
-                  <button
-                    onClick={onRetry}
-                    className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
-                    style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
-                  >
-                    Retry
-                  </button>
-                )}
-              </div>
+                Back to meal
+              </button>
+            ) : (
+              <button
+                onClick={onRetry}
+                className="flex-1 min-h-[44px] py-2 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+              >
+                Retry
+              </button>
             )}
-          </motion.div>
-        </motion.div>
+          </div>
+        ) : null
+      }
+    >
+      {state === 'loading' && (
+        <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 py-8">
+          <BubblesMascot state="thinking" size={64} />
+          <div
+            className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin motion-reduce:animate-none shrink-0"
+            style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }}
+          />
+          <p
+            className="text-sm font-semibold text-[var(--color-text)]"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+          >
+            Checking your pantry against the whole meal…
+          </p>
+        </div>
       )}
-    </AnimatePresence>
+
+      {state === 'error' && (
+        <div className="py-8 text-center" role="alert">
+          <p className="text-sm font-semibold text-red-500" style={{ fontFamily: 'Nunito, sans-serif' }}>
+            {errorMessage || 'Something went wrong. Please try again.'}
+          </p>
+        </div>
+      )}
+
+      {state === 'success' && (
+        <div className="py-8 text-center flex flex-col items-center gap-3">
+          <BubblesMascot state="celebrate" size={80} />
+          <p
+            className="text-sm font-extrabold text-[var(--color-text)]"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+          >
+            Pantry updated!
+          </p>
+          {hasSkipped && skipped && (
+            <>
+              <SkippedDeductionsNotice names={skipped.names} unnamed={skipped.unnamed} total={skipped.total} />
+              <button
+                type="button"
+                ref={backToMealRef}
+                onClick={onBackToMeal}
+                className="min-h-[44px] px-6 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                style={{ background: 'var(--color-primary-dark)', fontFamily: 'Nunito, sans-serif' }}
+                data-testid="meal-cook-sheet-back-to-meal"
+              >
+                Back to meal
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {(state === 'review' || state === 'confirming') && proposal && (
+        <CookReviewBody
+          proposal={proposal}
+          overrides={overrides}
+          onOverrideChange={(key, value) =>
+            setOverrides((prev: Record<string, string>) => ({ ...prev, [key]: value }))
+          }
+          expiredDismissed={expiredDismissed}
+          onDismissExpired={() => setExpiredDismissed(true)}
+          sourceNote={meaLineSourceNote}
+          missingSourceNote={missingSourceNote}
+          expiredHeading="Expired ingredients in this meal"
+        />
+      )}
+    </PixelSheet>
   )
 }

@@ -1,6 +1,8 @@
 """Recipe URL ingestor service.
 
-Extracts structured RecipeCard data from a URL using a three-tier strategy:
+Extracts structured RecipeCard data from a URL. YouTube links (issue #528) skip
+the tiers below: Gemini watches the video itself via ``AIManager.video_complete``.
+Everything else uses a three-tier strategy:
 1. recipe-scrapers scrape_html (known site via Schema.org, supported_only=True default)
 2. recipe-scrapers scrape_html with supported_only=False (unknown site with Schema markup)
 3. AI fallback via AIManager (Gemini → Ollama) from raw HTML
@@ -9,11 +11,21 @@ Extracts structured RecipeCard data from a URL using a three-tier strategy:
 import logging
 import re
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
 from bubbly_chef.models.recipe import Ingredient, RecipeCard
-from bubbly_chef.prompts.recipe_url import _AI_EXTRACTION_PROMPT, _AI_NO_FETCH_PROMPT
+from bubbly_chef.prompts.recipe_url import (
+    _AI_EXTRACTION_PROMPT,
+    _AI_NO_FETCH_PROMPT,
+    _AI_VIDEO_PROMPT,
+)
+from bubbly_chef.services.recipe_import_errors import (
+    classify_video_error,
+    not_a_recipe,
+    video_failed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +117,88 @@ def _scraper_to_recipe_card(scraper: Any, url: str) -> RecipeCard:  # noqa: ANN4
 
 
 # ---------------------------------------------------------------------------
+# YouTube video import (issue #528)
+# ---------------------------------------------------------------------------
+
+_YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com"})
+_YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def youtube_video_id(url: str) -> str | None:
+    """Return the video ID for a YouTube Shorts / watch / youtu.be link, else None.
+
+    Only an exact host match counts (``notyoutube.com`` and
+    ``youtube.com.evil.example`` do not), and only video links: a channel,
+    playlist or the homepage return None and keep going down the scraper tiers.
+    """
+    try:
+        parsed = urlparse(url.strip())
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https"):
+        return None
+    candidate: str | None = None
+    if host == "youtu.be":
+        candidate = parsed.path.lstrip("/").split("/")[0]
+    elif host in _YOUTUBE_HOSTS:
+        if parsed.path == "/watch":
+            values = parse_qs(parsed.query).get("v")
+            candidate = values[0] if values else None
+        elif parsed.path.startswith("/shorts/"):
+            candidate = parsed.path[len("/shorts/") :].split("/")[0]
+    if candidate and _YOUTUBE_ID_RE.match(candidate):
+        return candidate
+    return None
+
+
+async def ingest_recipe_from_video(url: str) -> RecipeCard:
+    """Extract a RecipeCard from a YouTube video by letting Gemini watch it.
+
+    Raises:
+        RecipeImportError: with a sanitized ``reason`` — ``not_a_recipe`` when
+            the video holds no recipe, ``video_unavailable`` for a private /
+            removed / age-restricted video, ``video_timeout`` / ``video_failed``
+            for provider trouble. Nothing from the underlying exception reaches
+            the caller; it is logged here.
+        ValueError: ``url`` is not a YouTube video link.
+    """
+    video_id = youtube_video_id(url)
+    if video_id is None:
+        raise ValueError(f"Not a YouTube video URL: {url!r}")
+
+    ai_manager = get_ai_manager()
+    try:
+        # Gemini is handed the canonical watch URL whatever link shape the user
+        # pasted (Shorts, youtu.be, mobile).
+        result = await ai_manager.video_complete(
+            prompt=_AI_VIDEO_PROMPT,
+            video_url=f"https://www.youtube.com/watch?v={video_id}",
+            response_schema=RecipeCard,
+        )
+    except Exception as e:
+        logger.error(f"Video recipe import failed for {url!r}: {e}", exc_info=True)
+        raise classify_video_error(e) from e
+
+    if not isinstance(result, RecipeCard):
+        logger.error(f"Video recipe import returned unexpected type: {type(result)}")
+        raise video_failed()
+
+    # The prompt tells the model to return an empty card for a non-recipe video.
+    # A card with no ingredients and no steps is not a recipe whatever its title.
+    if not result.ingredients and not result.instructions:
+        logger.info(f"Video {video_id} is not a recipe (empty card): {result.title!r}")
+        raise not_a_recipe()
+
+    result.source_url = url
+    result.source_type = "video"
+    result.image_url = None
+    result.thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    logger.info(f"[video] title={result.title!r} ingredients={len(result.ingredients)}")
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main extraction function
 # ---------------------------------------------------------------------------
 
@@ -117,7 +211,12 @@ async def ingest_recipe_from_url(url: str) -> RecipeCard:
     1. recipe-scrapers strict mode (known sites, supported_only=True)
     2. recipe-scrapers with supported_only=False (unknown sites with Schema.org markup)
     3. AI extraction from raw HTML via AIManager
+
+    YouTube links skip all of this and go to ``ingest_recipe_from_video``.
     """
+    if youtube_video_id(url) is not None:
+        return await ingest_recipe_from_video(url)
+
     # ── Tier 1: scraper strict (known sites) ─────────────────────────────
     # scrape_me fetches HTML internally; on failure we fall through.
     try:

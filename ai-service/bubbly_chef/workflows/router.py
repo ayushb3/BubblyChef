@@ -50,10 +50,11 @@ from bubbly_chef.prompts.router import (
     DIET_CHANGE_FLAG_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
-    MODE_BIAS_RECIPE_PICKED_PROMPT,
-    MODE_BIAS_RECIPE_BROWSING_PROMPT,
+    MEAL_PLAN_ROUTING_PROMPT,
     MODE_BIAS_COOKING_PROMPT,
     MODE_BIAS_PANTRY_PROMPT,
+    MODE_BIAS_RECIPE_BROWSING_PROMPT,
+    MODE_BIAS_RECIPE_PICKED_PROMPT,
 )
 from bubbly_chef.repository.supabase_repo import SupabaseRepository, get_repository
 from bubbly_chef.services.recipe_url_ingestor import ingest_recipe_from_url
@@ -115,6 +116,98 @@ from bubbly_chef.workflows.state import (
 logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# A request to bring back a meal the user already has (issue #760): "make that
+# pasta dinner again", "show me my saved dinners", "the dinner I made last
+# week". The word "dinner"/"meal" is what drags these toward meal_plan or
+# recipe_generation, so they are routed deterministically instead of leaving it
+# to the LLM classifier (whose prompt and replay fixtures are frozen together).
+# "make a pasta dinner" and "what's for dinner?" have neither "again" nor a
+# saved/made reference and are untouched.
+_MEAL_WORD = r"(?:dinner|meal|lunch|supper)s?"
+_GROUP = (
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|ten|me|us|the\s+family|"
+    r"my\s+family|my\s+partner|friends|guests|company|a\s+crowd|a\s+couple)"
+)
+# Filler words between the meal word and "I made" may be an adjective or a dish
+# ("the cozy pasta dinner I made") or a head count ("the dinner for two I made"), but
+# never a preposition: "dinner with the chicken I cooked last night" is a question
+# about tonight's dinner that merely mentions a past cook (#772 review).
+_SAVED_FILLER = r"(?:for\s+" + _GROUP + r"\s+)?(?:(?!(?:with|for|using|from|in|on|at|to|of)\b)\w+\s+){0,3}?"
+_SAVED_MEAL_LOOKUP_RE = re.compile(
+    rf"^\s*(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?"
+    rf"(?:make|cook|have|do|repeat|redo|plan)\b.*\b{_MEAL_WORD}\b.*\bagain\b"
+    rf"|\bsaved\s+(?:\w+\s+){{0,3}}{_MEAL_WORD}\b"
+    rf"|\b{_MEAL_WORD}\s+{_SAVED_FILLER}(?:that\s+)?(?:i|we)\s+(?:made|saved|cooked)\b",
+    re.IGNORECASE,
+)
+
+# A clear whole-meal ask (issue #772): "plan a cozy Italian dinner for two",
+# "easy weeknight dinner, I only have eggs and rice", "a meal for 2 tonight".
+# The router used to key on "tonight" and sent these to a single recipe card or a
+# brainstorm, so the unambiguous shapes are routed to meal_plan deterministically,
+# the same seam as the saved-meal rule above (which runs first, so "make that
+# dinner for two again" still reaches the lookup). Three shapes:
+#   1. "plan [a] <descriptive> dinner/lunch/meal [for N]"
+#   2. "<meal word> for <N or a group>", with only descriptive words before the meal
+#      word ("dinner for two", "a cozy Italian dinner for 2")
+#   3. a bare occasion ask: only descriptive words, then the meal word, then the end
+#      of the message or a clause ("easy weeknight dinner, I only have ...")
+# Descriptive words are an allow-list on purpose: any other word before the meal word
+# is a dish ("a pasta dinner for two" names pasta) and stays with the classifier, as
+# does anything asking for a recipe, ideas or "something" ("recipe for dinner for two",
+# "something for dinner"), which keeps a quick "recipe for X" from becoming a
+# three-option meal.
+_DESCRIPTIVE = (
+    r"(?:easy|quick|simple|fast|cozy|cosy|light|healthy|cheap|fancy|romantic|nice|"
+    r"special|hearty|comforting|casual|budget|vegetarian|vegan|"
+    r"weeknight|weekend|weekday|friday|saturday|sunday|date[- ]night|family|"
+    r"italian|mexican|thai|indian|french|japanese|chinese|greek|korean|"
+    r"mediterranean|spanish|american)"
+)
+_MODIFIERS = rf"(?:{_DESCRIPTIVE}[,\s]+){{0,4}}"
+_ARTICLE = r"(?:(?:a|an|the|my|our)\s+)?"
+# Every shape is anchored at the start of the message and must read as a request,
+# not a mention: "can I freeze the dinner for 4?", "my family loved the dinner for 6"
+# and "help me plan my shopping list for dinner" all contain the words but are not
+# asks for a meal. The deterministic rules skip the model, so when in doubt they
+# do not match and the classifier (with its few-shots) decides.
+_ASK_LEAD = (
+    r"^\s*(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?"
+    r"(?:(?:i|we)\s+(?:want|need|would\s+like)\s+|(?:i|we)'d\s+(?:like|love)\s+|"
+    r"(?:give|get|make|cook|find|show)\s+(?:me|us)\s+|"
+    r"what(?:'s|\s+is)\s+|(?:what|how)\s+about\s+)?"
+)
+_PLAN_LEAD = r"^\s*(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:help\s+me\s+)?(?:let's\s+)?"
+_ASK_END = (
+    r"(?:\s+(?:tonight|today|please))*\s*"
+    r"(?:[,.;:!?]|$|\s+(?:using|with|from|i|we)\b)"
+)
+_WHOLE_MEAL_RE = re.compile(
+    # "plan [a] <descriptive> dinner [for N]" - "plan" as the verb, then the meal.
+    rf"{_PLAN_LEAD}plan\s+{_ARTICLE}{_MODIFIERS}{_MEAL_WORD}(?:\s+for\s+{_GROUP})?{_ASK_END}"
+    # "[a] <descriptive> dinner for N [and X]"
+    rf"|{_ASK_LEAD}{_ARTICLE}{_MODIFIERS}{_MEAL_WORD}\s+for\s+{_GROUP}"
+    rf"(?:\s+and\s+\w+(?:\s+\w+)?)?{_ASK_END}"
+    # "[an] easy weeknight dinner[, ...]" - descriptive words only, then the meal.
+    rf"|{_ASK_LEAD}(?:(?:a|an)\s+)?{_MODIFIERS}(?:dinner|lunch|supper){_ASK_END}",
+    re.IGNORECASE,
+)
+# Words that say the user wants a recipe, a list of ideas or one dish, or is
+# asking about, storing, shopping for or referring back to a meal - never a request
+# for a whole meal.
+_NOT_A_WHOLE_MEAL_RE = re.compile(
+    r"\b(?:recipes?|ideas?|something|anything|how|why|again|saved|"
+    r"made|cooked|ate|eaten|loved|enjoyed|was|were|freez\w*|stor(?:e|ed|age)|"
+    r"reheat\w*|shopping|groceries|grocery|list|yesterday|last\s+(?:week|time|night))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_whole_meal_ask(text: str) -> bool:
+    """True for an unambiguous whole-meal request (#772); see `_WHOLE_MEAL_RE`."""
+    return bool(_WHOLE_MEAL_RE.search(text)) and not _NOT_A_WHOLE_MEAL_RE.search(text)
+
 
 # Rolling cap on session.pending_proposal's two lists — bounds how much
 # cross-turn pantry context a single conversation can accumulate in
@@ -300,6 +393,11 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     3. Empty input — short-circuit to general_chat.
     4. Exit phrase — breaks out of any active mode.
     5. URL shortcut — unambiguous recipe_ingest (no LLM).
+    5a. Saved-meal phrasing ("make that pasta dinner again") — saved_recipe_lookup
+       (#760), no LLM; skipped while COOKING.
+    5b. Clear whole-meal ask ("plan a cozy dinner for two", "a meal for 2",
+       "easy weeknight dinner") — meal_plan (#772), no LLM; skipped while COOKING
+       or with a recipe picked. Runs after 5a, so meal-again phrasing wins.
     6. Brainstorm set re-pick — re-pick from stored set without regeneration.
     7. LLM classifier — with session-mode bias injected into the prompt.
        Post-classify logic then:
@@ -450,6 +548,36 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
             "detected_entities": [],
         }
 
+    # ── Priority 3b: bring back a saved meal (#760) — deterministic, no LLM ──
+    # Skipped mid-cook: the COOKING gate below owns what a message means then.
+    if session_mode != SessionMode.COOKING.value and _SAVED_MEAL_LOOKUP_RE.search(input_text):
+        logger.info("classify_intent: saved-meal phrasing — saved_recipe_lookup shortcut")
+        return {
+            **state,
+            "intent": Intent.SAVED_RECIPE_LOOKUP.value,
+            "intent_confidence": 0.95,
+            "intent_reasoning": "Saved-meal phrasing — saved lookup shortcut",
+            "detected_entities": [],
+        }
+
+    # ── Priority 3c: a clear whole-meal ask (#772) — deterministic, no LLM ──
+    # After 3b so "make that dinner for two again" is still a saved lookup. Skipped
+    # mid-cook (the COOKING gate owns the message) and while a recipe is picked, where
+    # "dinner for 4" is far likelier a scaling tweak than a new meal.
+    if (
+        session_mode != SessionMode.COOKING.value
+        and not _session_has_picked_recipe(state)
+        and _is_whole_meal_ask(input_text)
+    ):
+        logger.info("classify_intent: whole-meal phrasing — meal_plan shortcut")
+        return {
+            **state,
+            "intent": Intent.MEAL_PLAN.value,
+            "intent_confidence": 0.95,
+            "intent_reasoning": "Whole-meal phrasing — meal_plan shortcut",
+            "detected_entities": [],
+        }
+
     # ── Priority 4: Brainstorm set re-pick (before LLM) ──
     # Retain brainstorm_ideas across follow-ups; re-pick with no regeneration (Q6).
     # Fires when the last assistant turn was a brainstorm OR (history truncated)
@@ -550,6 +678,7 @@ async def classify_intent(state: WorkflowState) -> WorkflowState:
     prompt = (
         INTENT_CLASSIFICATION_SYSTEM_PROMPT
         + mode_bias_section
+        + MEAL_PLAN_ROUTING_PROMPT
         + DIET_CHANGE_FLAG_PROMPT
         + "\n\n"
         + INTENT_CLASSIFICATION_USER_PROMPT.format(text=input_text)
@@ -1415,8 +1544,10 @@ async def update_session_node(state: WorkflowState) -> WorkflowState:
             # but here the id is the real DB row id from search_saved_recipes,
             # not an ephemeral session-local card uuid. 0 or many matches leave
             # the session untouched: there is nothing unambiguous to pin yet.
+            # A matched saved meal leads the reply (#760), so a lone recipe
+            # beside it is not "the" unambiguous answer: don't pin it.
             matches = state.get("saved_recipe_matches") or []
-            if len(matches) == 1:
+            if len(matches) == 1 and not state.get("saved_meal_matches"):
                 match = matches[0]
                 session.pinned_recipe_id = str(match.get("id"))
                 session.metadata.last_recipe_title = match.get("title")
@@ -2021,6 +2152,7 @@ async def run_chat_workflow(
         envelope.suggested_action = final_state.get("suggested_action")
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
         envelope.metadata["saved_recipe_matches"] = final_state.get("saved_recipe_matches", [])
+        envelope.metadata["saved_meal_matches"] = final_state.get("saved_meal_matches", [])
         # Confirm band (#416 Q5) — surface the CONFIRM_CHOICE decision + options.
         if final_state.get("next_action") == NextAction.CONFIRM_CHOICE.value:
             envelope.next_action = NextAction.CONFIRM_CHOICE
@@ -2199,6 +2331,7 @@ def _build_envelope_from_state(
         envelope.metadata["brainstorm_ideas"] = final_state.get("brainstorm_ideas", [])
     if intent == Intent.SAVED_RECIPE_LOOKUP.value:
         envelope.metadata["saved_recipe_matches"] = final_state.get("saved_recipe_matches", [])
+        envelope.metadata["saved_meal_matches"] = final_state.get("saved_meal_matches", [])
 
     # Confirm band (#416 Q5): carry the CONFIRM_CHOICE next_action + the two
     # one-tap options into the envelope so the frontend can render the buttons.

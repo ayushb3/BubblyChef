@@ -34,7 +34,7 @@ describe('RecipeImportModal focus trap', () => {
     const labelledBy = dialog.getAttribute('aria-labelledby')
     expect(document.getElementById(labelledBy as string)).toHaveTextContent(/import from url/i)
 
-    expect(screen.getByPlaceholderText(/allrecipes\.com/i)).toHaveFocus()
+    expect(screen.getByPlaceholderText(/youtube/i)).toHaveFocus()
   })
 
   it('restores focus to the trigger button on Escape', async () => {
@@ -71,7 +71,7 @@ describe('RecipeImportModal focus trap', () => {
     fireEvent.mouseDown(trigger)
     fireEvent.click(trigger) // deliberately no trigger.focus() — see comment above
 
-    expect(screen.getByPlaceholderText(/allrecipes\.com/i)).toHaveFocus()
+    expect(screen.getByPlaceholderText(/youtube/i)).toHaveFocus()
 
     fireEvent.click(screen.getByText('Cancel'))
 

@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useRef, useEffect } from 'react'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import { type Recipe } from './RecipePage'
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap'
+import PixelSheet from '@/components/ui/PixelSheet'
 
 interface RecipeImportModalProps {
   onImported: (recipe: Partial<Recipe>, sourceUrl: string) => void
@@ -17,17 +16,32 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_url: "That doesn't look like a valid URL.",
   fetch_failed: "We couldn't reach that page. Check the URL and try again.",
   paywalled: "That page is behind a paywall and can't be imported.",
-  not_a_recipe: "We couldn't find a recipe on that page.",
+  not_a_recipe: "We couldn't find a recipe in that link.",
+  // Typed reasons for YouTube video import (issue #528)
+  video_unavailable: "We couldn't open that video. It may be private, age-restricted or removed.",
+  video_timeout: 'That took too long. Please try again in a moment.',
+  video_failed: "We couldn't watch that video right now. Please try again in a moment.",
 }
+
+// A video import is Gemini watching the clip, which takes longer than reading a
+// page. The server gives up well inside this (60s video call); this is the
+// backstop so the modal can never spin forever if the request hangs.
+const IMPORT_TIMEOUT_MS = 90_000
+
+const isYouTubeUrl = (s: string) => /^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(s.trim())
 
 export default function RecipeImportModal({ onImported, onClose }: RecipeImportModalProps) {
   const [url, setUrl] = useState('')
   const [state, setState] = useState<ImportState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const panelRef = useRef<HTMLDivElement>(null)
-  useModalFocusTrap(true, () => {
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
+  // Close is blocked while an import is in flight (#247): an accidental tap
+  // would silently discard the result. PixelSheet sends Escape, the scrim, the
+  // header X and drag-dismiss through this one guarded close.
+  const handleClose = () => {
     if (state !== 'loading') onClose()
-  }, panelRef)
+  }
 
   const isValidUrl = (s: string) => {
     try {
@@ -49,11 +63,20 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
     setState('loading')
     setErrorMsg('')
 
+    const controller = new AbortController()
+    abortRef.current = controller
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, IMPORT_TIMEOUT_MS)
+
     try {
       const res = await fetch('/api/recipes/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed }),
+        signal: controller.signal,
       })
 
       if (!res.ok) {
@@ -74,8 +97,12 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
       }
       onImported(recipe, trimmed)
     } catch {
-      setErrorMsg(ERROR_MESSAGES.fetch_failed)
+      // Unmounted (aborted by the cleanup): nothing left to update.
+      if (controller.signal.aborted && !timedOut) return
+      setErrorMsg(timedOut ? ERROR_MESSAGES.video_timeout : ERROR_MESSAGES.fetch_failed)
       setState('error')
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -84,171 +111,117 @@ export default function RecipeImportModal({ onImported, onClose }: RecipeImportM
   }
 
   return (
-    <AnimatePresence>
-      <>
-        <motion.div
-          key="import-backdrop"
-          className="fixed inset-0 z-[60]"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          // Matches the Cancel button's `disabled={state === 'loading'}` — the
-          // backdrop used to close unconditionally, so an accidental tap during
-          // an in-flight import silently discarded the result (#247).
-          onClick={state === 'loading' ? undefined : onClose}
-        />
-
-        <motion.div
-          key="import-panel"
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="recipe-import-modal-title"
-          tabIndex={-1}
-          className="fixed inset-x-4 top-1/2 z-[60] rounded-2xl overflow-hidden outline-none"
-          style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
-            maxWidth: '440px',
-            marginInline: 'auto',
-            transform: 'translateY(-50%)',
-          }}
-          initial={{ y: 'calc(-50% + 20px)', opacity: 0 }}
-          animate={{ y: '-50%', opacity: 1 }}
-          exit={{ y: 'calc(-50% + 20px)', opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+    <PixelSheet
+      open
+      onClose={handleClose}
+      title="Import from URL 🔗"
+      titleId="recipe-import-modal-title"
+      closeDisabled={state === 'loading'}
+      footer={
+        <div className="flex gap-3">
+          <button
+            onClick={handleImport}
+            disabled={state === 'loading' || !url.trim()}
+            className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
+            style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            {state === 'loading' ? 'Importing…' : 'Import'}
+          </button>
+          <button
+            onClick={handleClose}
+            disabled={state === 'loading'}
+            className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+            style={{
+              background: 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)',
+              color: 'var(--color-muted)',
+              fontFamily: 'Nunito, sans-serif',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      }
+    >
+      {/* Body */}
+      <div className="space-y-3">
+        <p
+          className="text-xs text-[var(--color-muted)]"
+          style={{ fontFamily: 'Nunito, sans-serif' }}
         >
-          {/* Header */}
-          <div
-            className="flex items-center justify-between px-5 py-3 border-b"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <h2
-              id="recipe-import-modal-title"
-              className="text-base font-extrabold"
-              style={{ color: 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
-            >
-              Import from URL 🔗
-            </h2>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-70 active:scale-95"
-              style={{ background: 'var(--color-bg)', color: 'var(--color-muted)' }}
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="px-5 py-4 space-y-3">
-            <p
-              className="text-xs text-[var(--color-muted)]"
-              style={{ fontFamily: 'Nunito, sans-serif' }}
-            >
-              Browse a site, copy the recipe URL, and paste it below.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { label: 'AllRecipes', href: 'https://www.allrecipes.com', noImage: true },
-                { label: 'Serious Eats', href: 'https://www.seriouseats.com', noImage: true },
-                { label: 'BBC Good Food', href: 'https://www.bbcgoodfood.com/recipes' },
-                { label: 'NYT Cooking', href: 'https://cooking.nytimes.com' },
-                { label: 'Food Network', href: 'https://www.foodnetwork.com/recipes' },
-              ].map(({ label, href, noImage }) => (
-                <a
-                  key={label}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={noImage ? 'Images may not be available for this site' : undefined}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
-                  style={{
-                    background: 'var(--color-bg)',
-                    border: '1.5px solid var(--color-border)',
-                    color: 'var(--color-primary-dark)',
-                    fontFamily: 'Nunito, sans-serif',
-                  }}
-                >
-                  {label}
-                  {noImage && <span style={{ color: '#f59e0b' }}>⚠</span>}
-                  {' '}↗
-                </a>
-              ))}
-            </div>
-
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => {
-                setUrl(e.target.value)
-                if (state === 'error') setState('idle')
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="https://www.allrecipes.com/recipe/..."
-              disabled={state === 'loading'}
-              autoFocus
-              className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)] disabled:opacity-50"
-              style={{
-                background: 'var(--color-bg)',
-                border: `1.5px solid ${state === 'error' ? 'var(--color-coral)' : 'var(--color-border)'}`,
-                color: 'var(--color-text)',
-                fontFamily: 'Nunito, sans-serif',
-              }}
-            />
-
-            {state === 'error' && (
-              <p
-                className="text-xs font-semibold"
-                style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
-              >
-                {errorMsg}
-              </p>
-            )}
-
-            {state === 'loading' && (
-              <p
-                className="text-xs text-[var(--color-muted)] flex items-center gap-1.5"
-                style={{ fontFamily: 'Nunito, sans-serif' }}
-              >
-                <BubblesMascot state="thinking" size={20} />
-                Extracting recipe…
-              </p>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div
-            className="flex gap-3 px-5 py-4 border-t"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <button
-              onClick={handleImport}
-              disabled={state === 'loading' || !url.trim()}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-transform"
-              style={{ background: 'var(--color-primary)', fontFamily: 'Nunito, sans-serif' }}
-            >
-              {state === 'loading' ? 'Importing…' : 'Import'}
-            </button>
-            <button
-              onClick={onClose}
-              disabled={state === 'loading'}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold disabled:opacity-50 active:scale-95 transition-transform"
+          Browse a site, copy the recipe URL (or a YouTube recipe video, Shorts work too),
+          and paste it below.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            { label: 'AllRecipes', href: 'https://www.allrecipes.com', noImage: true },
+            { label: 'Serious Eats', href: 'https://www.seriouseats.com', noImage: true },
+            { label: 'BBC Good Food', href: 'https://www.bbcgoodfood.com/recipes' },
+            { label: 'NYT Cooking', href: 'https://cooking.nytimes.com' },
+            { label: 'Food Network', href: 'https://www.foodnetwork.com/recipes' },
+          ].map(({ label, href, noImage }) => (
+            <a
+              key={label}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={noImage ? 'Images may not be available for this site' : undefined}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold no-underline hover:opacity-80 active:scale-95 transition-all"
               style={{
                 background: 'var(--color-bg)',
                 border: '1.5px solid var(--color-border)',
-                color: 'var(--color-muted)',
+                color: 'var(--color-primary-dark)',
                 fontFamily: 'Nunito, sans-serif',
               }}
             >
-              Cancel
-            </button>
-          </div>
-        </motion.div>
-      </>
-    </AnimatePresence>
+              {label}
+              {noImage && <span style={{ color: '#f59e0b' }}>⚠</span>}
+              {' '}↗
+            </a>
+          ))}
+        </div>
+
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => {
+            setUrl(e.target.value)
+            if (state === 'error') setState('idle')
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder="Recipe page or YouTube link..."
+          disabled={state === 'loading'}
+          autoFocus
+          className="w-full rounded-xl px-4 py-2.5 text-sm border focus:border-[var(--color-primary)] disabled:opacity-50"
+          style={{
+            background: 'var(--color-bg)',
+            border: `1.5px solid ${state === 'error' ? 'var(--color-coral)' : 'var(--color-border)'}`,
+            color: 'var(--color-text)',
+            fontFamily: 'Nunito, sans-serif',
+          }}
+        />
+
+        {state === 'error' && (
+          <p
+            className="text-xs font-semibold"
+            style={{ color: 'var(--color-coral)', fontFamily: 'Nunito, sans-serif' }}
+          >
+            {errorMsg}
+          </p>
+        )}
+
+        {state === 'loading' && (
+          <p
+            className="text-xs text-[var(--color-muted)] flex items-center gap-1.5"
+            style={{ fontFamily: 'Nunito, sans-serif' }}
+          >
+            <BubblesMascot state="thinking" size={20} />
+            {isYouTubeUrl(url)
+              ? 'Watching the video… this can take up to a minute'
+              : 'Extracting recipe…'}
+          </p>
+        )}
+      </div>
+    </PixelSheet>
   )
 }

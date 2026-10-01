@@ -13,14 +13,12 @@ import PostMessageChips from '@/components/chat/PostMessageChips'
 import CookingContextCard from '@/components/chat/CookingContextCard'
 import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
-import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
+import RecipeCard, { compactPropsFromProposal, compactPropsFromSavedMeal } from '@/components/recipes/RecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
 import BrainstormOptions from '@/components/chat/BrainstormOptions'
 import SavedRecipeMatches from '@/components/chat/SavedRecipeMatches'
 import ConfirmBand from '@/components/chat/ConfirmBand'
-import MealOptionCards from '@/components/chat/MealOptionCards'
-import CompactMealCard from '@/components/chat/CompactMealCard'
 import CookModal from '@/components/recipes/CookModal'
 import CookingAmendmentCard from '@/components/chat/CookingAmendmentCard'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
@@ -56,6 +54,7 @@ import type {
 import {
   getBrainstormIdeas,
   getSavedRecipeMatches,
+  getSavedMealMatches,
   getClarificationSuggestions,
   getFollowUpSuggestions,
   getAiErrorKind,
@@ -200,7 +199,7 @@ function ChatSurface() {
   const [mealSaveStates, setMealSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
   /**
    * msgId → a counter bumped by a tap on the meal-ready "Save this meal" pill
-   * (issue #651, §4). `CompactMealCard.focusSaveToken` scrolls to, focuses and
+   * (issue #651, §4). The compact RecipeCard's `focusSaveToken` scrolls to, focuses and
    * highlights its own Save meal button on each change — the pill itself
    * writes nothing; the card's button is still the one confirm.
    */
@@ -694,7 +693,7 @@ function ChatSurface() {
    * render call site below, same pattern as `onOpenMeal`/`onSaveMeal`.
    *
    * `save_meal` writes nothing — the pill only bumps the focus token so
-   * `CompactMealCard` scrolls to, focuses and highlights its own Save meal
+   * The compact RecipeCard scrolls to, focuses and highlights its own Save meal
    * button, which is the one confirm. `open_meal` (Start cooking) is exactly
    * the card's Open meal action; `proposal` is only passed for a meal-ready
    * message, so this is a no-op if it's somehow absent. `open_scan` matches
@@ -951,6 +950,7 @@ function ChatSurface() {
                 onConfirmChoice={handleConfirmChoice}
                 onStageText={handleStageText}
                 onPickMealOption={handlePickMealOption}
+                onOpenSavedMeal={(mealId) => router.push(`/meals/${mealId}`)}
                 onOpenMeal={(proposal) => handleOpenMeal(msg.id, proposal)}
                 onSaveMeal={(proposal) => handleSaveMeal(msg.id, proposal)}
                 mealOpenState={mealOpenStates[msg.id] ?? 'idle'}
@@ -1036,7 +1036,8 @@ function ChatSurface() {
         {isStreaming ? (
           <SpringButton
             onClick={cancelStream}
-            className="bg-[var(--color-muted)] text-white font-semibold px-4 py-2.5 rounded-full"
+            variant="secondary"
+            className="px-4 py-2.5"
           >
             Stop
           </SpringButton>
@@ -1152,12 +1153,14 @@ interface MessageRendererProps {
   onStageText: (text: string) => void
   /** Meal chat (issue #650) — a tap on an option card. */
   onPickMealOption: (option: MealOption) => void
+  /** A saved meal from the lookup (issue #760): open the existing meal by id. */
+  onOpenSavedMeal: (mealId: string) => void
   /** Compact meal card — Open meal / Save meal. */
   onOpenMeal: (proposal: MealProposal) => void
   onSaveMeal: (proposal: MealProposal) => void
   mealOpenState: 'idle' | 'pending' | 'opened'
   mealSaveState: 'idle' | 'saving' | 'saved' | 'error'
-  /** Bumped by a "Save this meal" pill tap — see `CompactMealCard.focusSaveToken`. */
+  /** Bumped by a "Save this meal" pill tap — see the compact RecipeCard's `focusSaveToken`. */
   mealSaveFocusToken: number
 }
 
@@ -1196,6 +1199,7 @@ function MessageRenderer({
   onConfirmChoice,
   onStageText,
   onPickMealOption,
+  onOpenSavedMeal,
   onOpenMeal,
   onSaveMeal,
   mealOpenState,
@@ -1342,7 +1346,10 @@ function MessageRenderer({
   // regression the issue didn't ask for (PR #614 review, finding 2).
   if (intent === 'saved_recipe_lookup') {
     const matches = getSavedRecipeMatches(message.response)
-    if (matches.length > 0) {
+    // Saved meals (issue #760) lead: the user said "dinner"/"meal". Each is an
+    // existing row, so the card opens it by id and its Save is already done.
+    const mealMatches = getSavedMealMatches(message.response)
+    if (matches.length > 0 || mealMatches.length > 0) {
       return (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -1351,14 +1358,26 @@ function MessageRenderer({
         >
           <div className="flex items-end gap-2">
             <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-            <div className="flex flex-col gap-2 items-start">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 items-start">
               {message.content && <MessageBubble message={message} />}
-              <SavedRecipeMatches
-                matches={matches}
-                onSelect={onPickSavedRecipe}
-                onMakeMeal={makeMealAvailable ? onMakeMealFromMatch : undefined}
-                disabled={!isLastSettledAssistant}
-              />
+              {mealMatches.map((meal) => (
+                <RecipeCard
+                  key={meal.id}
+                  variant="compact"
+                  {...compactPropsFromSavedMeal(meal)}
+                  onOpen={() => onOpenSavedMeal(meal.id)}
+                  onSave={() => {}}
+                  saveState="saved"
+                />
+              ))}
+              {matches.length > 0 && (
+                <SavedRecipeMatches
+                  matches={matches}
+                  onSelect={onPickSavedRecipe}
+                  onMakeMeal={makeMealAvailable ? onMakeMealFromMatch : undefined}
+                  disabled={!isLastSettledAssistant}
+                />
+              )}
             </div>
           </div>
           {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
@@ -1390,13 +1409,26 @@ function MessageRenderer({
         >
           <div className="flex items-end gap-2">
             <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-            <div className="flex flex-col gap-2 items-start">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 items-start">
               {message.content && <MessageBubble message={message} />}
-              <MealOptionCards
-                options={proposal.options}
-                onSelect={onPickMealOption}
-                disabled={!isLastSettledAssistant}
-              />
+              {proposal.options.length > 0 && (
+                <div
+                  className="flex w-full flex-col gap-3"
+                  role="list"
+                  aria-label="Meal options — tap one to build it"
+                >
+                  {proposal.options.map((option, i) => (
+                    <RecipeCard
+                      key={option.option_id}
+                      variant="option"
+                      option={option}
+                      index={i}
+                      onSelect={onPickMealOption}
+                      disabled={!isLastSettledAssistant}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           {isLastSettledAssistant && !isFollowUpsPending(message.response) && (
@@ -1421,12 +1453,13 @@ function MessageRenderer({
         >
           <div className="flex items-end gap-2">
             <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-            <div className="flex flex-col gap-2 items-start">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 items-start">
               {message.content && <MessageBubble message={message} />}
-              <CompactMealCard
-                proposal={proposal}
-                onOpenMeal={() => onOpenMeal(proposal)}
-                onSaveMeal={() => onSaveMeal(proposal)}
+              <RecipeCard
+                variant="compact"
+                {...compactPropsFromProposal(proposal)}
+                onOpen={() => onOpenMeal(proposal)}
+                onSave={() => onSaveMeal(proposal)}
                 openState={mealOpenState}
                 saveState={mealSaveState}
                 focusSaveToken={mealSaveFocusToken}
@@ -1462,11 +1495,12 @@ function MessageRenderer({
       >
         <div className="flex items-end gap-2">
           <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-          <div className="flex flex-col gap-2 items-start">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 items-start">
             {message.content && (
               <MessageBubble message={message} />
             )}
-            <ChatRecipeCard
+            <RecipeCard
+              variant="chat"
               recipe={recipe}
               onSave={() => onSave(recipe)}
               onTryAnother={onTryAnother}
@@ -1568,7 +1602,7 @@ function MessageRenderer({
     >
       <div className="flex items-end gap-2">
         <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-        <MessageBubble message={message} />
+        <MessageBubble message={message} streaming={isLastAssistant && isStreaming} />
       </div>
       {/* Follow-up affordances — only under the last settled assistant reply.
           Recipe-card and pantry-proposal messages carry their own actions. */}

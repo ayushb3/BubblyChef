@@ -5,23 +5,23 @@ grouped by domain (router, chat, recipe, pantry, ingest, cook, recipe_url,
 dashboard). The code that builds/sends prompts stays where it always lived
 (workflows/, services/); it imports the constants from here.
 
-CODEOWNERS-gated: this is the one path in ai-service/ where a change is
+Review-gated: this is the one path in ai-service/ where a change is
 reviewed as a behavior change, not a refactor. mypy/ruff/pytest all pass on a
-prompt edit that quietly makes the model worse — human review is the only
-gate that catches that.
+prompt edit that quietly makes the model worse — a fresh-context review plus a
+`verify` run on the affected output is what catches that.
 """
 
+from bubbly_chef.prompts.chat import (
+    GENERAL_CHAT_SYSTEM_PROMPT,
+    GENERAL_CHAT_USER_PROMPT,
+    MODE_SYSTEM_PROMPTS,
+)
 from bubbly_chef.prompts.ingest import (
     PRODUCT_PARSE_SYSTEM_PROMPT,
     PRODUCT_PARSE_USER_PROMPT_TEMPLATE,
     RECEIPT_PARSE_PROMPT,
     RECEIPT_PARSE_SYSTEM_PROMPT,
     RECEIPT_PARSE_USER_PROMPT_TEMPLATE,
-)
-from bubbly_chef.prompts.chat import (
-    GENERAL_CHAT_SYSTEM_PROMPT,
-    GENERAL_CHAT_USER_PROMPT,
-    MODE_SYSTEM_PROMPTS,
 )
 from bubbly_chef.prompts.pantry import (
     PANTRY_PARSE_SYSTEM_PROMPT,
@@ -41,6 +41,7 @@ from bubbly_chef.prompts.recipe import (
 )
 from bubbly_chef.prompts.router import (
     DIET_CHANGE_FLAG_PROMPT,
+    MEAL_PLAN_ROUTING_PROMPT,
     INTENT_CLASSIFICATION_SYSTEM_PROMPT,
     INTENT_CLASSIFICATION_USER_PROMPT,
     MODE_BIAS_COOKING_PROMPT,
@@ -53,6 +54,7 @@ __all__ = [
     "BRAINSTORM_SYSTEM_PROMPT",
     "BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY",
     "DIET_CHANGE_FLAG_PROMPT",
+    "MEAL_PLAN_ROUTING_PROMPT",
     "GENERAL_CHAT_SYSTEM_PROMPT",
     "GENERAL_CHAT_USER_PROMPT",
     "GROUNDED_RECIPE_SYSTEM_PROMPT",
