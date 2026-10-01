@@ -241,8 +241,9 @@ describe('with a scan waiting', () => {
     expect(readPendingPutAway()).not.toBeNull()
     expect(screen.getByRole('button', { name: /^Fridge/ })).toHaveTextContent('Fridge +2')
 
-    const waiting = screen.getByTestId('put-away-waiting')
-    expect(within(waiting).getByText(/6 items/)).toBeInTheDocument()
+    // The way back in is the Bubbles card (#755): case 1, the scan not put away yet.
+    const waiting = screen.getByTestId('bubbles-card')
+    expect(within(waiting).getByText(/6 items to put away/)).toBeInTheDocument()
     fireEvent.click(within(waiting).getByRole('button', { name: 'Put it away' }))
     expect(await screen.findByRole('dialog', { name: 'Put the shopping away?' })).toBeInTheDocument()
   })

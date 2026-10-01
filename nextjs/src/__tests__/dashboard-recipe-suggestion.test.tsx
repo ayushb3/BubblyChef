@@ -1,16 +1,17 @@
 /**
- * Regression tests for HeroHome's tip + suggestion, covering #225 (tip was a
- * hardcoded weekday array, identical for every user) and #168 (suggestion was
- * uniform-random, not time- or pantry-aware) — both now sourced from
- * `GET /v1/dashboard/daily` via `lib/api/dashboard.ts`.
+ * The home's daily suggestion and tip (issues #225, #168, #306, #347), after the
+ * Bubbles card (issue #755).
  *
- * #306's deep-link fix (the "Open recipe" action linking to the specific
- * recipe, not the bare `/recipes` list) must not regress now that the
- * suggestion's source changed from a client-side `pickRandomRecipe` over
- * `/api/recipes` to the AI service's ranked pick.
+ * `GET /v1/dashboard/daily` still returns a tip and a recipe suggestion. Home now
+ * uses only the tip, for the card's quiet moment. The suggestion card is dropped
+ * (issue #554 and #593: it never named the dish, ran long, and always led with a
+ * recipe whatever the mood): cases 3 and 4 of the card replace it, so a
+ * suggestion in the response must never reach the screen, nor outrank food that is
+ * about to expire. The tip falls back to the card's own list when the request
+ * fails.
  */
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 
@@ -23,9 +24,6 @@ function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 500, json: async () => body } as Response
 }
 
-// HeroHome now also fetches decorations via `useDecorations()` (#521),
-// which needs a QueryClient in context — same wrapper as
-// deep-link-entrypoints.test.tsx uses for its own HeroHome renders.
 function renderHero() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -36,252 +34,120 @@ function renderHero() {
 }
 
 const originalFetch = global.fetch
+beforeEach(() => {
+  window.localStorage.clear()
+  // 15:30 on an even day of the year: between meals, so the card is the tip.
+  // Only `Date` is faked, so React Query and waitFor keep their timers.
+  jest.useFakeTimers({
+    now: new Date('2026-10-01T15:30:00'),
+    doNotFake: [
+      'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+      'clearImmediate', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+      'nextTick', 'performance', 'hrtime', 'requestIdleCallback', 'cancelIdleCallback',
+    ],
+  })
+})
 afterEach(() => {
   global.fetch = originalFetch
   jest.restoreAllMocks()
+  jest.useRealTimers()
 })
 
-const nonEmptyPantry = () => jsonResponse({ items: [{ id: 'p1', name: 'eggs' }], total_count: 1 })
-const noExpiring = () => jsonResponse({ items: [], count: 0 })
+const SUGGESTION = {
+  recipe_id: 'recipe-abc-123',
+  title: 'Lemon Garlic Pasta',
+  total_time_minutes: 25,
+  copy: 'Your lemon is about to turn — this pasta uses it up fast.',
+  reason: 'expiring' as const,
+}
 
-describe('HeroHome suggestion href (#168, #306 no-regression)', () => {
-  // Deliberately does NOT already state the time figure, so this fixture
-  // exercises the "Only N min!" append path distinctly from the
-  // no-duplication fixture below.
-  const suggestion = {
-    recipe_id: 'recipe-abc-123',
-    title: 'Lemon Garlic Pasta',
-    total_time_minutes: 25,
-    copy: 'Your lemon is about to turn — this pasta uses it up fast.',
-    reason: 'expiring' as const,
-  }
+function mockDaily(opts: {
+  daily: Response | 'fail'
+  expiring?: Array<Record<string, unknown>>
+}) {
+  const expiring = opts.expiring ?? []
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: expiring, count: expiring.length })
+    if (url.includes('/api/pantry')) {
+      return jsonResponse({ items: [{ id: 'p1', name: 'eggs' }, ...expiring], total_count: 1 + expiring.length })
+    }
+    if (url.includes('/api/ai/dashboard/daily')) {
+      return opts.daily === 'fail' ? jsonResponse({ error: 'AI service unreachable' }, false) : opts.daily
+    }
+    if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
+    return jsonResponse({ recipes: [], total_count: 0 })
+  }) as unknown as typeof fetch
+}
 
-  beforeEach(() => {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/pantry/expiring')) return noExpiring()
-      if (url.includes('/api/pantry')) return nonEmptyPantry()
-      if (url.includes('/api/ai/dashboard/daily')) {
-        return jsonResponse({
-          tip: { text: 'Zest citrus before juicing it.', category: 'technique' },
-          suggestion,
-          generated_at: '2026-09-05T08:00:00Z',
-          source: 'ai',
-        })
-      }
-      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as unknown as typeof fetch
+const daily = (tip: string, suggestion: unknown = SUGGESTION) =>
+  jsonResponse({
+    tip: { text: tip, category: 'technique' },
+    suggestion,
+    generated_at: '2026-10-01T08:00:00Z',
+    source: 'ai',
   })
 
-  it('links the hero action to the specific recipe, not the bare list', async () => {
+describe('the old suggestion card is gone (#554, #593)', () => {
+  it('a suggestion in the response is not rendered: no copy, no "Open recipe"', async () => {
+    mockDaily({ daily: daily('Zest citrus before juicing it.') })
     renderHero()
 
-    const link = await screen.findByRole('link', { name: /open recipe/i })
-    expect(link.getAttribute('href')).toBe(`/recipes/${suggestion.recipe_id}`)
-    expect(link.getAttribute('href')).not.toBe('/recipes')
-  })
-
-  it('renders the suggestion copy from the endpoint in the hero message', async () => {
-    renderHero()
-
-    await waitFor(() =>
-      expect(screen.getByText(/uses it up fast/i)).toBeInTheDocument()
-    )
-  })
-
-  it('appends "Only N min!" once when the copy does not already state the time', async () => {
-    renderHero()
-
-    const message = await screen.findByText(/uses it up fast/i)
-    expect(message.textContent).toBe(
-      'Your lemon is about to turn — this pasta uses it up fast. Only 25 min!'
-    )
-  })
-})
-
-describe('HeroHome suggestion copy that already states the time (#225 spec-review finding 2)', () => {
-  // The backend's own templated fallback copy ends with "... ready in {N} min.",
-  // so an unconditional append duplicates the figure:
-  // "Lemon Garlic Pasta — ready in 25 min. Only 25 min!" This fixture pins that
-  // the frontend does not append a second, redundant mention of the same number.
-  const suggestion = {
-    recipe_id: 'recipe-abc-123',
-    title: 'Lemon Garlic Pasta',
-    total_time_minutes: 25,
-    copy: 'Lemon Garlic Pasta — ready in 25 min.',
-    reason: 'fallback' as const,
-  }
-
-  beforeEach(() => {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/pantry/expiring')) return noExpiring()
-      if (url.includes('/api/pantry')) return nonEmptyPantry()
-      if (url.includes('/api/ai/dashboard/daily')) {
-        return jsonResponse({
-          tip: { text: 'Zest citrus before juicing it.', category: 'technique' },
-          suggestion,
-          generated_at: '2026-09-05T08:00:00Z',
-          source: 'fallback',
-        })
-      }
-      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as unknown as typeof fetch
-  })
-
-  it('does not duplicate the minute figure when the copy already states it', async () => {
-    renderHero()
-
-    const message = await screen.findByText(/ready in 25 min/i)
-    // The number "25" must appear exactly once in the rendered message.
-    expect(message.textContent?.match(/25/g)?.length).toBe(1)
-    expect(message.textContent).toBe('Lemon Garlic Pasta — ready in 25 min.')
-    expect(message.textContent).not.toMatch(/Only 25 min!/)
-  })
-})
-
-describe('HeroHome suggestion: null (#168)', () => {
-  beforeEach(() => {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/pantry/expiring')) return noExpiring()
-      if (url.includes('/api/pantry')) return nonEmptyPantry()
-      if (url.includes('/api/ai/dashboard/daily')) {
-        return jsonResponse({
-          tip: { text: 'Taste as you cook.', category: 'technique' },
-          suggestion: null,
-          generated_at: '2026-09-05T08:00:00Z',
-          source: 'ai',
-        })
-      }
-      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as unknown as typeof fetch
-  })
-
-  it('does not render an "Open recipe" link when suggestion is null', async () => {
-    renderHero()
-
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    await screen.findByTestId('bubbles-card')
+    expect(screen.queryByText(/uses it up fast/i)).toBeNull()
+    expect(screen.queryByText(/Only 25 min/i)).toBeNull()
     expect(screen.queryByRole('link', { name: /open recipe/i })).toBeNull()
+    expect(document.querySelector('a[href="/recipes/recipe-abc-123"]')).toBeNull()
   })
 
-  it('renders without throwing when suggestion is null', async () => {
+  it('expiring food leads, not the suggestion (#347, now the card\'s case 3)', async () => {
+    mockDaily({
+      daily: daily('Great tip!', { ...SUGGESTION, copy: 'A quick frittata for your spinach.' }),
+      expiring: [
+        {
+          id: 'item-1',
+          name: 'spinach',
+          days_until_expiry: 0,
+          is_expiring_soon: true,
+          expiry_date: '2026-10-01',
+        },
+      ],
+    })
+    renderHero()
+
+    expect(await screen.findByText(/Your spinach needs using today/)).toBeInTheDocument()
+    expect(screen.queryByText(/quick frittata/i)).toBeNull()
+    expect(screen.getAllByTestId('bubbles-card')).toHaveLength(1)
+  })
+
+  it('no suggestion, no problem', async () => {
+    mockDaily({ daily: daily('Taste as you cook.', null) })
     expect(() => renderHero()).not.toThrow()
+    expect(await screen.findByTestId('bubbles-card')).toBeInTheDocument()
   })
 })
 
-describe('HeroHome tip sourced from the endpoint, not the static array (#225)', () => {
-  beforeEach(() => {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/pantry/expiring')) return noExpiring()
-      if (url.includes('/api/pantry')) return nonEmptyPantry()
-      if (url.includes('/api/ai/dashboard/daily')) {
-        return jsonResponse({
-          tip: { text: 'This tip only exists on the server, never in the static list.', category: 'pantry' },
-          suggestion: null,
-          generated_at: '2026-09-05T08:00:00Z',
-          source: 'ai',
-        })
-      }
-      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as unknown as typeof fetch
-  })
-
-  it('renders the endpoint tip text, which is not a member of the static fallback list', async () => {
+describe('the tip is sourced from the endpoint, not a static array (#225)', () => {
+  it('renders the endpoint tip on the quiet-moment card', async () => {
+    mockDaily({ daily: daily('This tip only exists on the server, never in the static list.') })
     renderHero()
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(/this tip only exists on the server/i)
-      ).toBeInTheDocument()
-    )
+    expect(
+      await screen.findByText(/this tip only exists on the server/i),
+    ).toBeInTheDocument()
   })
 })
 
-describe('HeroHome tip fallback when the dashboard request fails (#225)', () => {
-  beforeEach(() => {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/pantry/expiring')) return noExpiring()
-      if (url.includes('/api/pantry')) return nonEmptyPantry()
-      if (url.includes('/api/ai/dashboard/daily')) {
-        return jsonResponse({ error: 'AI service unreachable' }, false)
-      }
-      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as unknown as typeof fetch
-  })
-
-  it('still renders a tip from the static fallback list, with no error surfaced', async () => {
+describe('the tip when the dashboard request fails (#225)', () => {
+  it('still renders a tip from the fallback list, with no error surfaced', async () => {
+    mockDaily({ daily: 'fail' })
     renderHero()
 
-    // One of the static FALLBACK_TIPS strings should be on screen.
-    await waitFor(() =>
-      expect(
-        screen.getByText(/season your pan|let meat rest|freeze herbs|toast spices|pasta water|green onions|taste as you cook/i)
-      ).toBeInTheDocument()
-    )
-    // No error text, no thrown render.
+    expect(
+      await screen.findByText(
+        /season your pan|let meat rest|freeze herbs|toast spices|pasta water|green onions|taste as you cook/i,
+      ),
+    ).toBeInTheDocument()
     expect(screen.queryByText(/error/i)).toBeNull()
-  })
-
-  it('does not render an "Open recipe" link (no suggestion to fall back to)', async () => {
-    renderHero()
-
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-    expect(screen.queryByRole('link', { name: /open recipe/i })).toBeNull()
-  })
-})
-
-describe('HeroHome hero priority — suggestion beats urgent expiry (#347)', () => {
-  const suggestion = {
-    recipe_id: 'recipe-xyz-999',
-    title: 'Spinach Frittata',
-    total_time_minutes: 20,
-    copy: 'A quick frittata for your spinach.',
-    reason: 'expiring' as const,
-  }
-  const urgentExpiringItem = {
-    id: 'item-1',
-    name: 'spinach',
-    days_until_expiry: 0,
-    is_expiring_soon: true,
-    expiry_date: new Date().toISOString().slice(0, 10),
-  }
-
-  beforeEach(() => {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/pantry/expiring'))
-        return jsonResponse({ items: [urgentExpiringItem], count: 1 })
-      if (url.includes('/api/pantry'))
-        return jsonResponse({ items: [urgentExpiringItem], total_count: 1 })
-      if (url.includes('/api/ai/dashboard/daily'))
-        return jsonResponse({ tip: { text: 'Great tip!' }, suggestion })
-      if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as unknown as typeof fetch
-  })
-
-  it('shows suggestion copy, not the expiry headline, when both exist', async () => {
-    renderHero()
-
-    await waitFor(() => screen.getByText('A quick frittata for your spinach. Only 20 min!'))
-    // Urgent-expiry headline must be suppressed
-    expect(screen.queryByText(/expires today/i)).toBeNull()
-    expect(screen.queryByText(/expires tomorrow/i)).toBeNull()
-  })
-
-  it('links to the recipe, not the cook-this-now deep-link, when suggestion exists', async () => {
-    renderHero()
-
-    await waitFor(() => screen.getByRole('link', { name: /open recipe/i }))
-    const link = screen.getByRole('link', { name: /open recipe/i }) as HTMLAnchorElement
-    expect(link.href).toContain('/recipes/recipe-xyz-999')
   })
 })

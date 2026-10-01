@@ -76,7 +76,7 @@ export interface ReadableSearchParams {
 }
 
 /** `meal` is the make-it-a-meal seed (issue #651 PR B). */
-export type ChatSeedKind = 'tip' | 'use' | 'plan' | 'meal'
+export type ChatSeedKind = 'tip' | 'use' | 'plan' | 'meal' | 'ask'
 
 export interface ChatSeedCard {
   emoji: string
@@ -101,16 +101,19 @@ export interface ChatSeed {
   context?: Record<string, unknown>
 }
 
+/** The longest `?ask=` text: a pill is a short phrase. */
+const ASK_MAX = 160
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** One-line, control-free, at most 120 characters; null when nothing is left. */
-function cleanSeedTitle(raw: string | null): string | null {
+/** One-line, control-free, at most `max` (default 120) characters; null when nothing is left. */
+function cleanSeedTitle(raw: string | null, max = 120): string | null {
   if (raw === null) return null
   const cleaned = raw
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return cleaned.slice(0, 120).trim() || null
+  return cleaned.slice(0, max).trim() || null
 }
 
 /** Trimmed param value, or null when absent/blank. */
@@ -151,6 +154,14 @@ export function planDinnerHref(foods?: readonly string[]): string {
     with: names.slice(0, PLAN_WITH_LIMIT).join('|'),
   })
   return `/chat?${params.toString()}`
+}
+
+/**
+ * A starter pill as a link (issue #755): the Bubbles card's pills that have no
+ * dedicated seed above send the text a tap on the pill inside the chat would.
+ */
+export function askHref(message: string): string {
+  return `/chat?${new URLSearchParams({ ask: message }).toString()}`
 }
 
 /**
@@ -303,6 +314,22 @@ export function deriveChatSeed(
         subtitle:
           foods.length > 0 ? `Using your ${joinFoods(foods)}` : 'Bubbles will suggest a few meals',
         dismissLabel: 'Dismiss dinner planning context',
+      },
+    }
+  }
+
+  // A starter pill's text (issue #755), after plan and before tip/use.
+  const ask = cleanSeedTitle(param(params, 'ask'), ASK_MAX)
+  if (ask) {
+    return {
+      key: `ask:${ask}`,
+      kind: 'ask',
+      message: ask,
+      card: {
+        emoji: '💬',
+        label: 'Ask Bubbles',
+        title: ask,
+        dismissLabel: 'Dismiss question context',
       },
     }
   }

@@ -18,7 +18,10 @@ export default function RecipeBookLoader() {
   // paging state.
   // `?tab=meals` opens on the Meals tab — where deleting a meal lands the user
   // (issue #675). Anything else keeps the default.
-  const initialTab: LibraryTab = useSearchParams().get('tab') === 'meals' ? 'meals' : 'recipes'
+  const searchParams = useSearchParams()
+  const initialTab: LibraryTab = searchParams.get('tab') === 'meals' ? 'meals' : 'recipes'
+  // `?resume=<recipe id>` (issue #755): the Bubbles card's "Pick up at step N".
+  const resumeRecipeId = searchParams.get('resume')
   const [tab, setTab] = useState<LibraryTab>(initialTab)
 
   useEffect(() => {
@@ -69,7 +72,7 @@ export default function RecipeBookLoader() {
           </p>
         </div>
       ) : (
-        <RecipeBook recipes={recipes} onMutate={() => { setLoading(true); setRefreshKey(k => k + 1) }} />
+        <RecipeBook recipes={recipes} resumeRecipeId={resumeRecipeId} onMutate={() => { setLoading(true); setRefreshKey(k => k + 1) }} />
       )}
     </div>
   )

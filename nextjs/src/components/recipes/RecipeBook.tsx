@@ -31,6 +31,12 @@ import { tagToTone } from '@/lib/tag-tone'
 interface RecipeBookProps {
   recipes: Recipe[]
   onMutate?: () => void
+  /**
+   * `?resume=<recipe id>` (issue #755): the Bubbles card's "Pick up at step N". A
+   * saved guided cook for this recipe reopens directly at its step instead of
+   * asking "Resume cooking?" again: the user just said so on home.
+   */
+  resumeRecipeId?: string | null
 }
 
 function scoreRecipe(r: Recipe, q: string): number {
@@ -73,7 +79,7 @@ const pageTransition = springs.page
 const SWIPE_THRESHOLD = 50
 const VELOCITY_THRESHOLD = 300
 
-export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
+export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }: RecipeBookProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
@@ -211,8 +217,9 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
     if (!active) return
     const match = recipes.find((r) => r.id === active.recipeId)
     if (!match) return
-    if (wasGuidedFlowOpen(active.recipeId)) {
-      // Same tab, reloaded mid-cook — restore directly, exactly as before.
+    if (wasGuidedFlowOpen(active.recipeId) || resumeRecipeId === active.recipeId) {
+      // Same tab, reloaded mid-cook — restore directly, exactly as before. A
+      // resume link (#755) is the same intent said out loud.
       setSelectedId(match.id)
       setResumeStep(active.step)
       setGuidedCookOpen(true)
@@ -225,7 +232,7 @@ export default function RecipeBook({ recipes, onMutate }: RecipeBookProps) {
         totalSteps: match.instructions.length,
       })
     }
-  }, [recipes])
+  }, [recipes, resumeRecipeId])
 
   // Keeps the `markGuidedFlowOpen` sessionStorage flag in sync with whether
   // the guided flow is actually mounted, for the fresh-visit-vs-reload rule

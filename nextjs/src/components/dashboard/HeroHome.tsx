@@ -1,16 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
-import { Lightbulb } from '@phosphor-icons/react/dist/ssr'
-import BubblesMascot from '@/components/ui/BubblesMascot'
-import FadeInView from '@/components/ui/FadeInView'
-import { titleCase } from '@/lib/format'
-import { useMotionConfig } from '@/lib/motion'
-import { cookThisHref, planDinnerHref, tipChatHref } from '@/lib/chat-seed'
+import { planDinnerHref } from '@/lib/chat-seed'
 import { kitchenEyebrow } from '@/lib/kitchen/eyebrow'
 import {
   PLACE_KEYS,
@@ -21,9 +14,7 @@ import {
   type PlaceSummaries,
 } from '@/lib/kitchen/places'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
-import type { DashboardTip, DashboardSuggestion } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
-import { estimatedExpirySuffix } from '@/lib/pantry-helpers'
 import { useDecorations } from '@/lib/api/kitchen'
 import { useBubbles } from '@/lib/api/bubbles'
 import KitchenScene from '@/components/kitchen/KitchenScene'
@@ -34,21 +25,22 @@ import PixelBubbles from '@/components/kitchen/PixelBubbles'
 import { sceneLabel } from '@/lib/kitchen/bubbles-spot'
 import { useBubblesSpot } from '@/hooks/useBubblesSpot'
 import PutAwaySheet from '@/components/kitchen/PutAwaySheet'
-import SpringButton from '@/components/ui/SpringButton'
 import { usePendingPutAway } from '@/hooks/usePendingPutAway'
-import { incomingByPlace, pendingLineCount } from '@/lib/kitchen/pending-putaway'
+import { incomingByPlace } from '@/lib/kitchen/pending-putaway'
+import HomeCardSlot from '@/components/kitchen/HomeCardSlot'
+import type { ExpiringItem } from '@/lib/kitchen/home-card'
+import { DEFAULT_EXPIRY_PRIORITY, type ExpiryPriority } from '@/lib/expiry-priority'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
-import UnlockOffer from '@/components/kitchen/UnlockOffer'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
 import KitchenThemeUnlockCard from '@/components/kitchen/KitchenThemeUnlockCard'
 import { useKitchenTheme } from '@/hooks/useKitchenTheme'
 
 interface HomeData {
   totalCount: number
-  expiringCount: number
-  urgentItem: EnrichedPantryItem | null
-  tip: DashboardTip | null
-  suggestion: DashboardSuggestion | null
+  /** Food that expires within three days, for the Bubbles card (#755). */
+  expiring: ExpiringItem[]
+  /** Today's tip from the daily-tip endpoint; `null` when it could not be reached. */
+  tip: string | null
   /** True when the pantry has an expired item that hasn't been used up (issue #525). */
   hasUnusedExpired: boolean
   /** Per-place counts for the wall; `null` until the pantry loads, and if it fails to. */
@@ -59,40 +51,19 @@ interface HomeData {
   items: EnrichedPantryItem[] | null
 }
 
-// Client-side fallback only — used when `GET /v1/dashboard/daily` (#225, #168)
-// can't be reached at all (network error, proxy 401, etc). The backend has
-// its own, separately-maintained fallback list for when *it* can't reach an
-// AI provider (see `ai-service/bubbly_chef/services/dashboard_service.py`);
-// this list exists purely so the dashboard never shows a blank tip or an
-// error when the client can't even complete the request.
-const FALLBACK_TIPS = [
-  'Season your pan, not just your food!',
-  'Let meat rest after cooking — way more tender.',
-  'Freeze herbs in olive oil ice cubes!',
-  'Toast spices in a dry pan for 30 seconds.',
-  'Pasta water makes sauces silky.',
-  'Green onions regrow in a glass of water.',
-  'Taste as you cook — adjust seasoning throughout.',
-]
-
-/**
- * True when `copy` already states `minutes` as a time figure (e.g. "ready in
- * 25 min" or "...in 25 minutes"). Used to avoid appending "Only N min!" onto
- * copy that already says the number — see #225 spec-review finding 2.
- */
-function copyMentionsMinutes(copy: string, minutes: number): boolean {
-  return new RegExp(`\\b${minutes}\\b\\s*min`, 'i').test(copy)
-}
-
 interface HeroHomeProps {
   /**
    * No longer shown: the greeting went with the kitchen redesign (#748). Kept so
-   * the page and its callers keep their signature; the Bubbles card (#755) may
-   * address the user by name.
+   * the page and its callers keep their signature.
    */
   displayName?: string
   /** `user_metadata.kitchen_theme` as read server-side (#523), or `null` if never set. */
   initialKitchenTheme?: string | null
+  /**
+   * `user_profiles.expiry_priority` as read server-side (#502, #755): Off skips the
+   * Bubbles card's "food expires today" case. Gentle when never set.
+   */
+  initialExpiryPriority?: ExpiryPriority
 }
 
 /**
@@ -117,15 +88,16 @@ function Skeleton({
   )
 }
 
-export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) {
+export default function HeroHome({
+  initialKitchenTheme = null,
+  initialExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
+}: HeroHomeProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<HomeData>({
     totalCount: 0,
-    expiringCount: 0,
-    urgentItem: null,
+    expiring: [],
     tip: null,
-    suggestion: null,
     hasUnusedExpired: false,
     places: null,
     stock: null,
@@ -144,8 +116,8 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         const [pantryRes, expiringRes, dashboardDaily] = await Promise.all([
           fetch('/api/pantry'),
           fetch('/api/pantry/expiring?days=3'),
-          // Failure here degrades to the static FALLBACK_TIPS list and no
-          // suggestion card — it must never take down the rest of the hero.
+          // The daily tip (the card's quiet moment). A failure here degrades to the
+          // card's own fallback tips: it must never take down the rest of home.
           fetchDashboardDaily().catch(() => null),
         ])
         const [pantryData, expiringData] = await Promise.all([
@@ -156,28 +128,17 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         const allItems: EnrichedPantryItem[] = pantryData.items ?? []
         const expiringItems: EnrichedPantryItem[] = expiringData.items ?? []
 
-        // Both windows need a lower bound. days_until_expiry goes negative once an
-        // item is past its date, so an unbounded `<= n` also matches food that
-        // expired weeks ago — which made the hero announce a long-expired item as
-        // "expires tomorrow" and inflated the "expiring" count with dead stock.
-        // Expired items are deliberately excluded here rather than relabelled:
-        // they are still surfaced on /pantry with an "Expired" badge, and #146
-        // already established that they should not get a cook-this-now CTA.
-        const urgentItem =
-          expiringItems.find(
-            (item) =>
-              item.days_until_expiry !== null &&
-              item.days_until_expiry >= 0 &&
-              item.days_until_expiry <= 1
-          ) ?? null
-
-        const expiringCount = allItems.filter(
-          (item) =>
-            item.is_expiring_soon ||
-            (item.days_until_expiry !== null &&
-              item.days_until_expiry >= 0 &&
-              item.days_until_expiry <= 7)
-        ).length
+        // Days until expiry goes negative once an item is past its date, and the
+        // card only speaks for food that is still good (today or tomorrow, which
+        // the picker narrows to): an expired item is surfaced on /pantry with an
+        // "Expired" badge and gets no cook-this-now nudge (#146).
+        const expiring: ExpiringItem[] = expiringItems
+          .filter((item) => item.days_until_expiry !== null && item.days_until_expiry >= 0)
+          .map((item) => ({
+            name: item.name,
+            daysUntil: item.days_until_expiry as number,
+            expiryDate: item.expiry_date ?? null,
+          }))
 
         // #525 — Bubbles goes "worried" when there's expired food sitting
         // unused (still has quantity) rather than already used up or cleared.
@@ -185,10 +146,8 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
 
         setData({
           totalCount: pantryData.total_count ?? allItems.length,
-          expiringCount,
-          urgentItem,
-          tip: dashboardDaily?.tip ?? null,
-          suggestion: dashboardDaily?.suggestion ?? null,
+          expiring,
+          tip: dashboardDaily?.tip?.text ?? null,
           hasUnusedExpired,
           // A failed pantry fetch is "unknown", not "empty": the wall then shows
           // names only rather than claiming four empty places.
@@ -214,24 +173,11 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
     setClockReady(true)
   }, [])
 
-  const { springs } = useMotionConfig()
-
-  // Tip expand/collapse (#391). The card used to `line-clamp-2` the tip with
-  // no way to read the rest: sighted users silently lost the end of the
-  // sentence while screen-reader users got the full text via the link's
-  // aria-label. `tipOverflows` is measured, not assumed, so a short tip that
-  // fits in two lines never grows a pointless "Read more" control.
-  const [tipExpanded, setTipExpanded] = useState(false)
-  const [tipOverflows, setTipOverflows] = useState(false)
-  const tipTextRef = useRef<HTMLParagraphElement>(null)
-
   const eyebrow = clockReady ? kitchenEyebrow(new Date()) : ''
   const {
     totalCount,
-    expiringCount,
-    urgentItem,
-    tip: dashboardTip,
-    suggestion,
+    expiring,
+    tip,
     hasUnusedExpired,
     places,
     stock,
@@ -289,68 +235,6 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
   } = useKitchenTheme(initialKitchenTheme, balance)
   const unlockedThemeKeys = new Set(unlockedThemes.map((t) => t.key))
 
-  // Tip text now comes from `GET /v1/dashboard/daily` (#225) — per-user,
-  // grounded in that user's own pantry. FALLBACK_TIPS only renders when the
-  // request itself failed (dashboardTip stays null), or before it resolves.
-  // Weekday indexing into the static list is gone; it's just a fallback pick
-  // now, so any stable index is fine — clockReady gates it purely to avoid an
-  // SSR/client hydration mismatch, same as the greeting above.
-  const tip = dashboardTip?.text ?? FALLBACK_TIPS[(clockReady ? new Date().getDay() : 0) % FALLBACK_TIPS.length]
-
-  // Compute the single hero message (most important). `suggestion.copy` is
-  // AI-written (or templated by the backend's own fallback) and already
-  // grounded in why this recipe won (#168) — the frontend no longer composes
-  // its own "Feel like trying X?" sentence. The design doc's "Only N min!"
-  // note means don't change the number's correctness, not keep concatenating
-  // it onto a sentence that already states it: the backend's own fallback
-  // copy template ends with "... ready in {N} min.", so appending
-  // unconditionally always duplicated the figure on that path. Only append
-  // when `copy` doesn't already mention the minute count (see
-  // `copyMentionsMinutes` and dashboard-recipe-suggestion.test.tsx).
-  //
-  // Priority order (#347): the AI-ranked suggestion leads whenever it exists —
-  // expiry urgency is a signal, not the headline. Urgent-expiry copy surfaces
-  // only when there is no suggestion to show.
-  const heroMessage = totalCount === 0
-    ? "Your pantry is empty — let's stock up!"
-    : suggestion
-      ? `${suggestion.copy}${
-          suggestion.total_time_minutes && !copyMentionsMinutes(suggestion.copy, suggestion.total_time_minutes)
-            ? ` Only ${suggestion.total_time_minutes} min!`
-            : ''
-        }`
-      : urgentItem
-        ? `Your ${titleCase(urgentItem.name)} expires ${urgentItem.days_until_expiry === 0 ? 'today' : 'tomorrow'}${estimatedExpirySuffix(urgentItem.estimated_expiry)}! Let's cook it up.`
-        : expiringCount > 0
-          ? 'Some items need using soon: tap the fridge or shelves to check.'
-          : 'Your kitchen is looking great!'
-
-  // The urgent-item CTA deep-links into a chat seeded with that ingredient
-  // (#138), so one tap lands on a recipe that actually uses it.
-  const heroAction = totalCount === 0
-    ? { label: 'Scan receipt', href: '/pantry?add=scan' }
-    : suggestion
-      ? { label: 'Open recipe', href: `/recipes/${suggestion.recipe_id}` }
-      : urgentItem
-        ? { label: 'Find a recipe', href: cookThisHref(urgentItem.name, urgentItem.expiry_date) }
-        : expiringCount > 0
-          ? { label: 'View pantry', href: '/pantry' }
-          : { label: 'Ask Bubbles', href: '/chat' }
-
-  // Measure whether the clamped tip actually overflows. Runs once the tip has
-  // rendered (after `loading` flips) and again on resize, since a tip that fits
-  // at 480px can wrap to three lines on a narrower phone. Only meaningful while
-  // collapsed — an expanded paragraph never overflows its own box.
-  useEffect(() => {
-    if (loading || tipExpanded) return
-    const el = tipTextRef.current
-    if (!el) return
-    const measure = () => setTipOverflows(el.scrollHeight > el.clientHeight + 1)
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [loading, tipExpanded, tip])
-
   // Storage sheet (issue #749): tapping a place opens it on that place. The
   // `?place=fridge&view=scene|list` deep link opens it directly, on load or when
   // the URL changes under a mounted home.
@@ -388,8 +272,6 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
 
   const pantryStatus = loading ? 'loading' : items ? 'ready' : 'error'
 
-  const mascotState = hasUnusedExpired ? 'worried' : !suggestion && urgentItem ? 'surprised' : 'happy'
-
   return (
     <div className="mx-auto flex w-full max-w-[480px] flex-col">
       {/* Header (#748): eyebrow, title, the pixel bubbles counter. */}
@@ -398,6 +280,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
       {/* The kitchen: the pixel wall (#748) with the 12 decoration slots
           (#521) and the four storage places. Full-bleed, at the board's 96:80
           proportion from first paint, so nothing shifts once data lands. */}
+      <div data-tour="hero">
       <KitchenScene
         unlocked={unlocked}
         loading={decorationsLoading}
@@ -410,25 +293,7 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         sceneLabel={sceneLabel(bubblesSpot, cooking)}
         incoming={incoming}
       />
-
-      {/* A scan waiting to be put away, with its sheet closed: the way back in
-          until the Bubbles card (#755) offers it. */}
-      {pending && !putAwayOpen && (
-        <div
-          className="flex min-h-11 items-center justify-between gap-3 px-4 pt-3"
-          data-testid="put-away-waiting"
-        >
-          <p className="min-w-0 text-sm font-bold text-[color:var(--color-text)] tabular-nums">
-            Shopping is waiting at the door
-            <span className="block text-xs">
-              {pendingLineCount(pending)} {pendingLineCount(pending) === 1 ? 'item' : 'items'}
-            </span>
-          </p>
-          <SpringButton size="sm" onClick={() => setPutAwayOpen(true)}>
-            Put it away
-          </SpringButton>
-        </div>
-      )}
+      </div>
 
       <PutAwaySheet
         open={putAwayOpen}
@@ -483,11 +348,11 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
         </div>
       </div>
 
-      <div className="flex flex-col items-center px-4 pt-3">
-        {/* One-time "new theme unlocked" card (#523) — shown at most once per
-            theme per browser. "Try it" switches the wall to the new theme
-            (same `selectTheme` the picker sheet uses) and dismisses; the
-            plain ✕ just dismisses without switching. */}
+      {/* One-time "new theme unlocked" card (#523) — shown at most once per theme
+          per browser. "Try it" switches the wall to the new theme (same
+          `selectTheme` the picker sheet uses) and dismisses; the plain ✕ just
+          dismisses without switching. */}
+      <div className="flex flex-col items-center px-4 pt-3 empty:hidden">
         <KitchenThemeUnlockCard
           theme={newlyUnlocked}
           onTryIt={() => {
@@ -496,126 +361,19 @@ export default function HeroHome({ initialKitchenTheme = null }: HeroHomeProps) 
           }}
           onDismiss={dismissUnlock}
         />
-
-        {/* Milestone unlock offer (#522) — mounted directly under the kitchen
-            wall per the issue's placement instruction. Renders nothing when
-            there's no pending offer. */}
-        <UnlockOffer />
-
-        {/* The Bubbles speech bubble stays for now; the Bubbles card (issue
-            #755) replaces it. The illustrated Bubbles (#592) sits beside the
-            copy, as on the board's card; the 120px hero above it went with the
-            redesign. Its mood is still the #525 priority (worried, surprised,
-            happy). */}
-        <FadeInView delay={0.1} className="mb-6 w-full max-w-sm">
-          <div
-            className="relative flex items-center gap-3 rounded-2xl border border-[var(--color-border)] p-4 shadow-sm"
-            style={{ background: 'var(--color-surface)' }}
-            aria-busy={loading}
-            data-tour="hero"
-          >
-            <BubblesMascot state={mascotState} size={56} />
-            <div className="min-w-0 flex-1">
-              {loading ? (
-                <div className="flex flex-col gap-2">
-                  <Skeleton className="h-3 w-11/12" />
-                  <Skeleton className="h-3 w-2/3" />
-                  <Skeleton className="mt-2 h-7 w-28 rounded-full" />
-                </div>
-              ) : (
-                <>
-                  <p className="text-sm leading-relaxed font-medium text-[var(--color-text)]">
-                    {heroMessage}
-                  </p>
-                  <Link
-                    href={heroAction.href}
-                    className="mt-3 inline-block rounded-full px-5 py-2 text-xs font-semibold text-white"
-                    style={{ background: 'var(--color-primary)' }}
-                  >
-                    {heroAction.label}
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-        </FadeInView>
-
-      {/* Tip of the day — compact. Gated on `loading` like its three siblings
-          above: without this, the fallback tip renders on first paint and gets
-          swapped for the AI tip once the fetch lands, reflowing the clamped
-          card and changing `tipChatHref` out from under a fast click. */}
-      <FadeInView delay={0.6}>
-        {loading ? (
-          <div
-            className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-[var(--color-border)] max-w-sm w-full"
-            style={{ background: 'var(--color-surface)' }}
-            aria-busy="true"
-          >
-            <Lightbulb size={20} weight="fill" className="flex-shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
-            <div className="flex-1 flex flex-col gap-1.5">
-              <Skeleton className="w-11/12 h-2.5" />
-              <Skeleton className="w-2/3 h-2.5" />
-            </div>
-          </div>
-        ) : (
-          /* Two distinct affordances rather than one overloaded tap (#391):
-             the card body expands/collapses the clamped tip, and a separate
-             "Ask Bubbles" pill carries the seeded-chat deep link that used to
-             be the whole card. The full tip text is always in the DOM — the
-             clamp is purely visual — so the screen-reader path is unchanged. */
-          <motion.div
-            layout
-            transition={springs.soft}
-            className="rounded-2xl px-4 py-3 border border-[var(--color-border)] max-w-sm w-full"
-            style={{ background: 'var(--color-surface)' }}
-          >
-            <div className="flex items-start gap-3">
-              <Lightbulb
-                size={20}
-                weight="fill"
-                className="flex-shrink-0 mt-0.5 text-[var(--color-primary)]"
-                aria-hidden="true"
-              />
-              <p
-                id="home-tip-text"
-                ref={tipTextRef}
-                className={`flex-1 text-xs text-[var(--color-muted)] leading-snug ${tipExpanded ? '' : 'line-clamp-2'}`}
-              >
-                <strong className="text-[var(--color-text)] font-semibold">Tip: </strong>
-                {tip}
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2 mt-2">
-              {(tipOverflows || tipExpanded) && (
-                <button
-                  type="button"
-                  onClick={() => setTipExpanded((e) => !e)}
-                  aria-expanded={tipExpanded}
-                  aria-controls="home-tip-text"
-                  className="text-xs font-semibold px-3 py-2 rounded-full text-[var(--color-text)] border border-[var(--color-border)] active:scale-95 transition-transform motion-reduce:transition-none"
-                  style={{ background: 'var(--color-bg)' }}
-                >
-                  {tipExpanded ? 'Show less' : 'Read more'}
-                </button>
-              )}
-              {/* href is derived from the same `tip` the card renders, so the
-                  post-hydration correction moves both together (#143). Without
-                  an explicit label the accessible name would be just "Ask
-                  Bubbles", which gives no hint of what the chat is seeded with. */}
-              <Link
-                href={tipChatHref(tip)}
-                aria-label={`Ask Bubbles about today's tip: ${tip}`}
-                className="text-xs font-semibold px-3 py-2 rounded-full text-white active:scale-95 transition-transform motion-reduce:transition-none"
-                style={{ background: 'var(--color-primary)' }}
-              >
-                Ask Bubbles
-              </Link>
-            </div>
-          </motion.div>
-        )}
-      </FadeInView>
-
       </div>
+
+      {/* The Bubbles card (#755): the one thing Bubbles has to say right now, or
+          the milestone unlock offer (#522) in its place while one is pending. */}
+      <HomeCardSlot
+        loaded={!loading}
+        expiring={expiring}
+        expiryPriority={initialExpiryPriority}
+        tip={tip}
+        pending={pending}
+        hasUnusedExpired={hasUnusedExpired}
+        onPutAway={() => setPutAwayOpen(true)}
+      />
 
       {/* The storage sheet (#749). It steps aside, keeping its search text, while
           the edit or add sheet is on top: two sheets cannot both hold focus. */}
