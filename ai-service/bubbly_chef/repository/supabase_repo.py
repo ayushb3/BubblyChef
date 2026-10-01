@@ -222,15 +222,24 @@ class _PantryUsePlan:
     Exactly one of three shapes: `refusal` set (the row is untouched and the
     action fails with that message), `updates` None with no refusal (the row is
     used up and gets deleted), or `updates` holding the payload to write.
+
+    `held`, set only on a used-up row, is how much of the action's unit the row
+    actually held, computed from the same base the plan spent. A use spread over
+    several lots carries on with `amount - held` (#711), so the carry-over can
+    never disagree with what the plan wrote.
     """
 
-    __slots__ = ("refusal", "updates")
+    __slots__ = ("held", "refusal", "updates")
 
     def __init__(
-        self, updates: dict[str, Any] | None = None, refusal: str | None = None
+        self,
+        updates: dict[str, Any] | None = None,
+        refusal: str | None = None,
+        held: float | None = None,
     ) -> None:
         self.updates = updates
         self.refusal = refusal
+        self.held = held
 
 
 def _display_subtraction_plan(
@@ -240,7 +249,7 @@ def _display_subtraction_plan(
     and re-derive the base from what remains (nulls when it can't be)."""
     new_qty = max(0.0, float(existing.quantity) - used_qty)
     if new_qty <= 0:
-        return _PantryUsePlan()
+        return _PantryUsePlan(held=float(existing.quantity))
     qb, ub = normalize_to_base_unit(
         name=name, quantity=new_qty, unit=existing.unit, category=category
     )
@@ -269,7 +278,7 @@ def _plan_pantry_use(
     # from and no base to scale by. Using it up is a delete, as it always was.
     quantity = float(existing.quantity)
     if quantity <= 0:
-        return _PantryUsePlan()
+        return _PantryUsePlan(held=0.0)
 
     # The row's base comes from the displayed amount first: stored bases can be
     # stale from the old `use` path, and the display amount is what the user sees.
@@ -309,7 +318,10 @@ def _plan_pantry_use(
         # Used up: nothing left in the base, a sliver below any real amount, or a
         # display quantity that rounds to zero.
         if new_base < _USED_UP_BASE_EPSILON or new_qty <= 0:
-            return _PantryUsePlan()
+            # What the row held, in the unit the user said: the part of the use its
+            # base covered (all of it when the base held at least that much).
+            held = used_qty * min(1.0, row_base / used_base) if used_base > 0 else used_qty
+            return _PantryUsePlan(held=held)
         return _PantryUsePlan(
             updates={"quantity": new_qty, "quantity_base": new_base, "unit_base": row_unit}
         )
@@ -319,32 +331,6 @@ def _plan_pantry_use(
     return _PantryUsePlan(
         refusal=f"Units don't match ({used_unit} vs {existing.unit}), edit the unit for: {name}"
     )
-
-
-def _use_capacity(item: PantryItem, name: str, used_unit: str) -> float | None:
-    """How much of `used_unit` this lot holds, or None when it can't be told.
-
-    Same unit: the lot's displayed amount. Otherwise its base amount (stored, or
-    derived from the row) divided by the base worth of one `used_unit`. A lot
-    with no base is measured by its display amount only when the user just counts
-    ("item"/"count"), the same fallback `_plan_pantry_use` makes.
-    """
-    if normalize_unit(used_unit) == normalize_unit(item.unit):
-        return float(item.quantity)
-    counts = normalize_unit(used_unit) in {"item", "count"}
-    base_qty, base_unit = lot_base(item)
-    if base_qty is None or base_unit is None or base_qty <= 0:
-        return float(item.quantity) if counts else None
-    per_unit, _ = normalize_to_base_unit(
-        name=name,
-        quantity=1.0,
-        unit=used_unit,
-        category=item.category.value,
-        target_unit=base_unit,
-    )
-    if per_unit is None or per_unit <= 0:
-        return float(item.quantity) if counts else None
-    return base_qty / per_unit
 
 
 def _plan_use_across_lots(
@@ -374,17 +360,17 @@ def _plan_use_across_lots(
         if remaining <= _LOT_EPSILON:
             break
         step = {**action, "quantity": remaining, "unit": used_unit}
-        capacity = _use_capacity(lot, name, used_unit)
-        is_last = index == len(stocked) - 1
-        if capacity is not None and capacity <= remaining + _LOT_EPSILON and not is_last:
-            planned.append((lot, _PantryUsePlan()))  # used up; the rest carries on
-            remaining -= capacity
-            continue
         plan = _plan_pantry_use(lot, name, step)
         if plan.refusal is not None:
             refusal = refusal or plan.refusal
             continue
         planned.append((lot, plan))
+        # The plan itself decides whether this lot ran out. If it did and there is
+        # a next lot, what it held (from the base the plan used) is spent and the
+        # rest carries on; otherwise the use is covered (or floors, on the last lot).
+        if plan.updates is None and plan.held is not None and index < len(stocked) - 1:
+            remaining -= plan.held
+            continue
         remaining = 0.0
         break
     if not planned and refusal is None:

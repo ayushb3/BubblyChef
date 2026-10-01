@@ -157,6 +157,32 @@ class TestUseAcrossLots:
         assert dozen not in client.rows
         assert loose["quantity"] == 4 and loose["quantity_base"] == 4
 
+    async def test_a_lot_with_a_stale_high_base_still_carries_the_rest_on(self) -> None:
+        # "1 dozen" whose stored base says 24: the display (12) is what the use
+        # spends (#677), so the other 2 of 14 must reach the next lot.
+        dozen = _row("eggs", 1, "dozen", base=24, base_unit="count", expiry=_day(3))
+        loose = _row("eggs", 6, "item", base=6, base_unit="count", expiry=_day(10))
+        repo, client = _repo([dozen, loose])
+
+        result = await _use(repo, 14, name="eggs")
+
+        assert (result.applied, result.failed) == (1, 0)
+        assert dozen not in client.rows
+        assert loose["quantity"] == 4 and loose["quantity_base"] == 4
+
+    async def test_a_lot_with_a_stale_low_base_does_not_over_spend_the_next(self) -> None:
+        # Stored base 6 on a displayed dozen: the dozen really holds 12, so only
+        # 2 of the 14 come off the loose eggs (not 8).
+        dozen = _row("eggs", 1, "dozen", base=6, base_unit="count", expiry=_day(3))
+        loose = _row("eggs", 6, "item", base=6, base_unit="count", expiry=_day(10))
+        repo, client = _repo([dozen, loose])
+
+        result = await _use(repo, 14, name="eggs")
+
+        assert (result.applied, result.failed) == (1, 0)
+        assert dozen not in client.rows
+        assert loose["quantity"] == 4 and loose["quantity_base"] == 4
+
     async def test_a_partial_use_of_a_dozen_keeps_its_display_and_base_in_step(self) -> None:
         dozen = _row("eggs", 1, "dozen", base=12, base_unit="count", expiry=_day(3))
         loose = _row("eggs", 6, "item", base=6, base_unit="count", expiry=_day(10))
@@ -332,6 +358,50 @@ class TestRemoveProposalNamesTheLots:
         assert "2 lots" in message
         assert "2 item" in message and "3 item" in message
         assert out["proposal"] is not None
+
+    async def test_a_differently_named_lot_is_named_in_the_message(self) -> None:
+        plain = _row("onion", 2, "item", base=2, base_unit="count", expiry=_day(3))
+        organic = _row("organic onion", 3, "item", base=3, base_unit="count", expiry=_day(10))
+        repo, _client = _repo([plain, organic])
+
+        async def _get_repo() -> SupabaseRepository:
+            return repo
+
+        with patch.object(pantry_nodes, "get_repository", _get_repo):
+            out = await pantry_nodes.finalize_pantry_proposal(_remove_state())
+
+        message = out["assistant_message"]
+        assert "3 item of organic onion" in message  # the row the user didn't name
+        assert "2 item, expires" in message  # same name as the proposal: not repeated
+
+    async def test_a_use_names_a_differently_named_lot_it_will_draw_on(self) -> None:
+        plain = _row("onion", 2, "item", base=2, base_unit="count", expiry=_day(3))
+        organic = _row("organic onion", 3, "item", base=3, base_unit="count", expiry=_day(10))
+        repo, _client = _repo([plain, organic])
+
+        async def _get_repo() -> SupabaseRepository:
+            return repo
+
+        state = _remove_state()
+        state["actions"][0].action_type = ActionType.USE
+        with patch.object(pantry_nodes, "get_repository", _get_repo):
+            out = await pantry_nodes.finalize_pantry_proposal(state)
+
+        assert "3 item of organic onion" in out["assistant_message"]
+        assert "soonest expiry first" in out["assistant_message"]
+
+    async def test_a_use_over_same_named_lots_adds_nothing(self) -> None:
+        repo, _client = _repo(_onions((2, _day(3)), (3, _day(10))))
+
+        async def _get_repo() -> SupabaseRepository:
+            return repo
+
+        state = _remove_state()
+        state["actions"][0].action_type = ActionType.USE
+        with patch.object(pantry_nodes, "get_repository", _get_repo):
+            out = await pantry_nodes.finalize_pantry_proposal(state)
+
+        assert out["assistant_message"] == state["assistant_message"]
 
     async def test_a_single_lot_adds_nothing_to_the_message(self) -> None:
         repo, _client = _repo(_onions((2, _day(3))))
