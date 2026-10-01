@@ -30,6 +30,7 @@ from bubbly_chef.ai import AIManager
 from bubbly_chef.ai.manager import NoProviderAvailableError
 from bubbly_chef.ai.provider import user_message_for_failure
 from bubbly_chef.domain.allergens import allergens_named
+from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
 from bubbly_chef.models.meal import (
     MealConstraintsEcho,
     MealDishOutline,
@@ -38,7 +39,6 @@ from bubbly_chef.models.meal import (
 )
 from bubbly_chef.models.recipe import RecipeCard
 from bubbly_chef.prompts.meal import (
-    MEAL_DISH_PANTRY_BLOCK,
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
     MEAL_SIDE_ALTERNATIVES_SYSTEM_PROMPT,
 )
@@ -48,13 +48,15 @@ from bubbly_chef.services.allergen_guard import (
     allergen_refusal_message,
     generate_allergen_safe,
 )
+from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
 from bubbly_chef.services.food_exclusions import allergy_never_block, get_stored_food_exclusions
 from bubbly_chef.workflows.meal.nodes import (
+    _dish_pantry_block,
     _expand_dish,
     _pantry_items_for_matching,
     _score_items_for_dish_prompt,
 )
-from bubbly_chef.workflows.recipe.nodes import _format_pantry_item_for_prompt, is_pantry_grounded
+from bubbly_chef.workflows.recipe.nodes import is_pantry_grounded
 
 logger = logging.getLogger(__name__)
 
@@ -174,39 +176,37 @@ async def _pantry_grounding(
     user_id: str,
     constraints_echo: MealConstraintsEcho,
     allergies: list[str] | None = None,
-) -> tuple[bool, list[dict[str, Any]]]:
-    """`(pantry_grounded, scored_items)` for one dish prompt.
+) -> tuple[bool, list[dict[str, Any]], ExpiryPriority]:
+    """`(pantry_grounded, scored_items, expiry_priority)` for one dish prompt.
 
     The same opt-out gate the pick stage applies (issue #287): with
     `use_pantry: false` on the meal's echoed constraints, the pantry is
-    never read.
+    never read. The expiry priority (issues #502, #718) is the profile's
+    current setting, read the same way as the pick stage; it is Gentle, the
+    default, when the pantry is not read.
     """
     pantry_grounded = is_pantry_grounded(constraints_echo.recipe_constraints)
     if not pantry_grounded:
-        return False, []
+        return False, [], DEFAULT_EXPIRY_PRIORITY
+    expiry_priority = await get_stored_expiry_priority(user_id)
     pantry_items = await _pantry_items_for_matching(user_id)
     scored_items = _score_items_for_dish_prompt(
-        pantry_items, constraints_echo.recipe_constraints, allergies
+        pantry_items, constraints_echo.recipe_constraints, allergies, expiry_priority
     )
-    return True, scored_items
+    return True, scored_items, expiry_priority
 
 
-def _pantry_block_text(pantry_grounded: bool, scored_items: list[dict[str, Any]]) -> str:
-    """The `{pantry_block}` text for a dish prompt -- mirrors `_expand_dish`'s
-    own pantry-block construction, for the side-alternatives prompt, which
-    doesn't go through `_expand_dish` itself."""
+def _pantry_block_text(
+    pantry_grounded: bool,
+    scored_items: list[dict[str, Any]],
+    expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PRIORITY,
+) -> str:
+    """The `{pantry_block}` text for a dish prompt -- the same block `_expand_dish`
+    builds, for the side-alternatives prompt, which doesn't go through
+    `_expand_dish` itself."""
     if not pantry_grounded:
         return MEAL_DISH_PANTRY_BLOCK_NO_PANTRY
-    priority_items = [
-        _format_pantry_item_for_prompt(i) for i in scored_items if i.get("_score", 0) >= 5
-    ]
-    supporting_items = [
-        _format_pantry_item_for_prompt(i) for i in scored_items if 0 <= i.get("_score", 0) < 5
-    ]
-    return MEAL_DISH_PANTRY_BLOCK.format(
-        priority_items=", ".join(priority_items[:8]) or "none specified",
-        supporting_items=", ".join(supporting_items[:10]) or "none",
-    )
+    return _dish_pantry_block(scored_items, expiry_priority)
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +249,10 @@ async def generate_side_alternatives(
     constraints_echo = loaded.constraints_echo
     # Read from the profile on every call (#500), never from the meal's stored echo.
     allergies = list((await get_stored_food_exclusions(user_id)).allergies)
-    pantry_grounded, scored_items = await _pantry_grounding(user_id, constraints_echo, allergies)
-    pantry_block = _pantry_block_text(pantry_grounded, scored_items)
+    pantry_grounded, scored_items, expiry_priority = await _pantry_grounding(
+        user_id, constraints_echo, allergies
+    )
+    pantry_block = _pantry_block_text(pantry_grounded, scored_items, expiry_priority)
 
     avoid_line = ""
     if replaced_dish is not None:
@@ -388,7 +390,7 @@ async def expand_meal_dish(
     )
 
     allergies = list((await get_stored_food_exclusions(user_id)).allergies)
-    pantry_grounded, scored_items = await _pantry_grounding(
+    pantry_grounded, scored_items, expiry_priority = await _pantry_grounding(
         user_id, loaded.constraints_echo, allergies
     )
 
@@ -402,6 +404,7 @@ async def expand_meal_dish(
             scored_items,
             pantry_grounded,
             allergies,
+            expiry_priority,
         )
     except AllergenViolation as e:
         raise MealGenerationUnavailableError(
