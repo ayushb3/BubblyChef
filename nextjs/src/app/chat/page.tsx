@@ -1589,7 +1589,7 @@ function MessageRenderer({
     >
       <div className="flex items-end gap-2">
         <BubblesMascot size={36} state={mascotState} animate={false} className="flex-shrink-0 mb-1" />
-        <MessageBubble message={message} />
+        <MessageBubble message={message} streaming={isLastAssistant && isStreaming} />
       </div>
       {/* Follow-up affordances — only under the last settled assistant reply.
           Recipe-card and pantry-proposal messages carry their own actions. */}

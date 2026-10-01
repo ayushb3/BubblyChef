@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import Chip from '@/components/ui/Chip'
+import PixelPanel from '@/components/ui/PixelPanel'
+import ChatCardHeader from './ChatCardHeader'
 import { titleCase } from '@/lib/format'
 import { proposalActionKey } from '@/types/chat'
 import type { PantryProposalData, PantryProposalAction, TermSuggestion } from '@/types/chat'
@@ -260,20 +262,17 @@ export default function PantryProposalCard({
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
-      className="rounded-2xl bg-white border border-[var(--color-border)] shadow-sm overflow-hidden max-w-[85%]"
-    >
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-2">
-        <span className="text-lg" role="img" aria-label="basket">🧺</span>
-        <span className="font-bold text-sm text-[var(--color-text)]">Pantry Update</span>
-        <span className="ml-auto text-xs text-[var(--color-muted)]">
-          {proposal.actions.length} item{proposal.actions.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+    <PixelPanel entrance contentClassName="p-0" className="max-w-[85%] mr-1 mb-1">
+      <ChatCardHeader
+        emoji="🧺"
+        emojiLabel="basket"
+        title="Pantry Update"
+        trailing={
+          <span className="text-xs text-[var(--color-muted)]">
+            {proposal.actions.length} item{proposal.actions.length !== 1 ? 's' : ''}
+          </span>
+        }
+      />
 
       {/* Actions list */}
       <div className="px-4 py-2 flex flex-col divide-y divide-[var(--color-border)]">
@@ -301,7 +300,7 @@ export default function PantryProposalCard({
           selection; the parent stages the accumulated natural-language text in
           the input field so the user can review/edit before sending. */}
       {isPending && clarificationTerms.length > 0 && (
-        <div className="px-4 py-3 border-t border-[var(--color-border)] flex flex-col gap-3">
+        <div className="px-4 py-3 border-t-2 border-[var(--color-border)] flex flex-col gap-3">
           <span className="text-xs text-[var(--color-muted)]">
             🤔 Still not sure what you meant by:
           </span>
@@ -331,7 +330,7 @@ export default function PantryProposalCard({
       )}
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-[var(--color-border)]">
+      <div className="px-4 py-3 border-t-2 border-[var(--color-border)]">
         {isFailed && (
           <p className="text-xs text-red-600 mb-2">
             {error ?? 'Could not add items. Please try again.'}
@@ -363,6 +362,6 @@ export default function PantryProposalCard({
           <p className="text-sm text-[var(--color-muted)]">Skipped</p>
         )}
       </div>
-    </motion.div>
+    </PixelPanel>
   )
 }

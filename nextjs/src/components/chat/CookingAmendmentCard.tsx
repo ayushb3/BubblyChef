@@ -1,8 +1,9 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { titleCase } from '@/lib/format'
 import SpringButton from '@/components/ui/SpringButton'
+import PixelPanel from '@/components/ui/PixelPanel'
+import ChatCardHeader from './ChatCardHeader'
 import type { AmendmentCardState, RecipeAmendmentProposal } from '@/types/chat'
 
 interface CookingAmendmentCardProps {
@@ -43,19 +44,17 @@ export default function CookingAmendmentCard({
   const showButtons = actionable && (state === 'pending' || applying || state === 'failed')
 
   return (
-    <motion.div
+    <PixelPanel
+      entrance
       data-testid="cooking-amendment-card"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
-      className="rounded-2xl bg-white border border-[var(--color-border)] shadow-sm overflow-hidden max-w-[85%]"
+      contentClassName="p-0"
+      className="max-w-[85%] mr-1 mb-1"
     >
-      <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-2">
-        <span className="text-lg" role="img" aria-label="pot">🍲</span>
-        <span className="font-bold text-sm text-[var(--color-text)]">
-          {proposal.recipe_title ? `${proposal.recipe_title}, your way` : 'Your changes'}
-        </span>
-      </div>
+      <ChatCardHeader
+        emoji="🍲"
+        emojiLabel="pot"
+        title={proposal.recipe_title ? `${proposal.recipe_title}, your way` : 'Your changes'}
+      />
 
       <div className="px-4 py-3 flex flex-col gap-2">
         {proposal.change_summary && (
@@ -76,7 +75,7 @@ export default function CookingAmendmentCard({
         </ul>
       </div>
 
-      <div className="px-4 py-3 border-t border-[var(--color-border)]">
+      <div className="px-4 py-3 border-t-2 border-[var(--color-border)]">
         {state === 'failed' && actionable && (
           <p role="alert" className="text-xs text-red-600 mb-2">
             {errorMessage ?? "Couldn't update what you're cooking. Please try again."}
@@ -113,6 +112,6 @@ export default function CookingAmendmentCard({
           </p>
         )}
       </div>
-    </motion.div>
+    </PixelPanel>
   )
 }

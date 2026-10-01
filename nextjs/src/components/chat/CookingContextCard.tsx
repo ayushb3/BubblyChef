@@ -1,7 +1,7 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { useMotionConfig } from '@/lib/motion'
+import PixelPanel from '@/components/ui/PixelPanel'
+import ChatCardHeader from './ChatCardHeader'
 
 interface CookingContextCardProps {
   title: string
@@ -24,69 +24,48 @@ export default function CookingContextCard({
   onDismiss,
   onFinishCooking,
 }: CookingContextCardProps) {
-  const { springs } = useMotionConfig()
+  const hasBody = ingredientCount > 0 || Boolean(onFinishCooking)
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={springs.snappy}
-      className="mb-4 rounded-2xl px-4 py-3 flex items-start gap-3"
-      style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        boxShadow: 'var(--shadow-soft)',
-      }}
-    >
-      <span aria-hidden="true" className="text-lg leading-none mt-0.5">
-        🍳
-      </span>
-
-      <div className="flex-1 min-w-0">
-        <p
-          className="text-[11px] font-bold uppercase tracking-wide text-[var(--color-muted)]"
-          style={{ fontFamily: 'Nunito, sans-serif' }}
-        >
-          Cooking now
-        </p>
-        <p
-          className="truncate text-sm font-extrabold text-[var(--color-text)] leading-snug"
-          style={{ fontFamily: 'Nunito, sans-serif' }}
-        >
-          {title}
-        </p>
-        {ingredientCount > 0 && (
-          <p
-            className="text-xs text-[var(--color-muted)] mt-0.5"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
-          >
-            {ingredientCount} {ingredientCount === 1 ? 'ingredient' : 'ingredients'} · ask me
-            anything about it
-          </p>
-        )}
-        {onFinishCooking && (
+    <PixelPanel entrance contentClassName="p-0" className="mb-4 mr-1">
+      <ChatCardHeader
+        emoji="🍳"
+        eyebrow="Cooking now"
+        title={title}
+        divider={false}
+        className={hasBody ? 'pb-1' : ''}
+        trailing={
           <button
             type="button"
-            onClick={onFinishCooking}
-            className="mt-1.5 text-xs font-semibold text-[var(--color-primary-dark)] hover:underline"
-            style={{ fontFamily: 'Nunito, sans-serif' }}
+            onClick={onDismiss}
+            aria-label="Dismiss cooking context"
+            className="-mr-2 -my-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] transition-transform hover:text-[var(--color-text)] active:scale-95"
           >
-            Finished cooking →
+            <span aria-hidden="true" className="text-base leading-none">
+              ✕
+            </span>
           </button>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss cooking context"
-        className="w-11 h-11 -mr-2 -mt-2 flex items-center justify-center rounded-full text-[var(--color-muted)] hover:text-[var(--color-text)] active:scale-95 transition-transform"
-      >
-        <span aria-hidden="true" className="text-base leading-none">
-          ✕
-        </span>
-      </button>
-    </motion.div>
+        }
+      />
+      {hasBody && (
+        <div className="px-4 pb-3 pl-[49px]">
+          {ingredientCount > 0 && (
+            <p className="text-xs text-[var(--color-muted)]">
+              {ingredientCount} {ingredientCount === 1 ? 'ingredient' : 'ingredients'} · ask me
+              anything about it
+            </p>
+          )}
+          {onFinishCooking && (
+            <button
+              type="button"
+              onClick={onFinishCooking}
+              className="mt-1 inline-flex min-h-[44px] items-center text-xs font-semibold text-[var(--color-primary-dark)] hover:underline"
+            >
+              Finished cooking →
+            </button>
+          )}
+        </div>
+      )}
+    </PixelPanel>
   )
 }
