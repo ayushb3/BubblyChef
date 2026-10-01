@@ -3,7 +3,10 @@
 @theme inline {
   --color-background: #FFF0F5;
   --color-foreground: #5C4A5A;
-  --font-sans: var(--font-nunito);
+  /* Same stack as the body rule below, so `font-sans` (the class that replaced
+     the inline Nunito font-family styles, issue #747) falls back to
+     the same system sans for glyphs Nunito lacks, such as the arrow in "← Back". */
+  --font-sans: var(--font-nunito, Nunito), Nunito, sans-serif;
   --font-mono: var(--font-geist-mono);
   /* issue #741: pixel lettering. World-only text (scene tags, the chalkboard,
      the bubbles counter). Becomes the `font-pixel` utility. */
