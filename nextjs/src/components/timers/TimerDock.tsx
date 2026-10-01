@@ -26,6 +26,7 @@ import {
 } from '@/lib/useCookingTimers'
 import { formatDuration } from '@/lib/timers'
 import { useMotionConfig } from '@/lib/motion'
+import { HATCHED } from '@/components/meal/dish-style'
 import { useTimerDockRaised } from './TimerDockLayer'
 
 /** Best-effort completion beep — a short two-tone chime via WebAudio. Never
@@ -70,7 +71,12 @@ function vibrateOnComplete() {
  * text (issue #664 — "+2 min" used to break onto two lines) and meets the
  * 44px touch target. */
 const CONTROL_BASE =
-  'flex-shrink-0 whitespace-nowrap min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-2 text-xs font-bold active:scale-95 transition-transform rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
+  'group flex-shrink-0 whitespace-nowrap min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-1 text-xs font-bold text-[color:var(--color-text)] rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
+
+/** Issue #745 (signature): a dock control reads as a small keycap — ink edge,
+ * 2px key shadow, sinks on press — inside its 44px hit area. */
+const KEY_FACE =
+  'inline-flex min-h-[32px] min-w-[32px] items-center justify-center rounded-full border-2 border-[color:var(--color-text)] bg-[var(--color-surface)] px-2.5 shadow-[0_2px_0_var(--color-text)] transition-transform duration-[60ms] group-active:translate-y-[1px] group-active:shadow-[0_1px_0_var(--color-text)] motion-reduce:transition-none motion-reduce:group-active:translate-y-0 motion-reduce:group-active:brightness-90'
 
 function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolean }) {
   const { pause, resume, dismiss, extend } = useCookingTimers()
@@ -99,16 +105,20 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       onClick={isCompleted ? () => dismiss(timer.id) : undefined}
       // Collapsed: a compact pill in the dock's single scrolling row, which
       // must not shrink (issue #664). Expanded: one full-width row per timer.
-      className={
+      // Issue #745 — the timeline's language: a running timer is "just
+      // cooking" (surface, ink edge), a paused one is hatched with a dashed
+      // edge, and a finished one is solid primary (it needs you now).
+      className={`${
         expanded
           ? 'flex items-center gap-2 rounded-full pl-3 pr-1 py-1 w-full min-w-0'
           : 'flex flex-shrink-0 items-center gap-2 rounded-full px-3 py-2'
-      }
-      style={{
-        background: isCompleted ? 'var(--color-coral)' : 'var(--color-surface)',
-        border: `1.5px solid ${isCompleted ? 'var(--color-coral)' : 'var(--color-border)'}`,
-        boxShadow: 'var(--shadow-soft)',
-      }}
+      } text-[color:var(--color-text)] ${
+        isCompleted
+          ? 'border-2 border-solid border-[color:var(--color-text)] bg-[var(--color-primary)] shadow-[0_2px_0_var(--color-text)]'
+          : isPaused
+            ? HATCHED
+            : 'border-2 border-solid border-[color:var(--color-text)] bg-[var(--color-surface)] shadow-[0_2px_0_var(--color-text)]'
+      }`}
       // Not `role="status"` / a live region: the countdown text inside
       // changes every second, and a live region announces every change —
       // one polite screen-reader interruption per timer per second, on
@@ -131,14 +141,12 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
       {expanded && (
         <span
           className="flex-1 min-w-0 truncate text-xs font-bold"
-          style={{ color: isCompleted ? '#fff' : 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
         >
           {timer.label}
         </span>
       )}
       <span
         className="flex-shrink-0 whitespace-nowrap text-xs font-extrabold tabular-nums"
-        style={{ color: isCompleted ? '#fff' : 'var(--color-text)', fontFamily: 'Nunito, sans-serif' }}
       >
         {isCompleted ? 'Done!' : formatDuration(timer.remainingSeconds)}
       </span>
@@ -148,9 +156,8 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           onClick={() => (isPaused ? resume(timer.id) : pause(timer.id))}
           aria-label={isPaused ? `Resume ${timer.label} timer` : `Pause ${timer.label} timer`}
           className={CONTROL_BASE}
-          style={{ color: 'var(--color-primary-dark)' }}
         >
-          {isPaused ? '▶' : '⏸'}
+          <span className={KEY_FACE}>{isPaused ? '▶' : '⏸'}</span>
         </button>
       )}
       {expanded && !isCompleted && (
@@ -159,10 +166,9 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           onClick={() => extend?.(timer.id, 120)}
           aria-label={`Add 2 minutes to ${timer.label} timer`}
           className={CONTROL_BASE}
-          style={{ color: 'var(--color-primary-dark)' }}
           data-testid={`timer-extend-${timer.id}`}
         >
-          +2 min
+          <span className={KEY_FACE}>+2 min</span>
         </button>
       )}
       {expanded && (
@@ -171,9 +177,8 @@ function TimerBadge({ timer, expanded }: { timer: CookingTimer; expanded: boolea
           onClick={() => dismiss(timer.id)}
           aria-label={`Dismiss ${timer.label} timer`}
           className={CONTROL_BASE}
-          style={{ color: isCompleted ? '#fff' : 'var(--color-muted)' }}
         >
-          ✕
+          <span className={KEY_FACE}>✕</span>
         </button>
       )}
     </motion.div>
@@ -269,11 +274,12 @@ export default function TimerDock() {
             }
             data-testid="timer-dock-list"
             data-layout={expanded ? 'stack' : 'row'}
+            // Issue #745 — a pixel-framed bar: ink edge and the hard offset
+            // shadow in the theme's primary-dark.
             style={{
-              background: 'color-mix(in srgb, var(--color-surface) 92%, transparent)',
-              backdropFilter: 'blur(6px)',
-              border: '1px solid var(--color-border)',
-              boxShadow: 'var(--shadow-pop)',
+              background: 'var(--color-bg)',
+              border: '2px solid var(--color-text)',
+              boxShadow: '3px 3px 0 var(--color-primary-dark)',
             }}
           >
             <button
@@ -281,9 +287,9 @@ export default function TimerDock() {
               onClick={() => setExpanded((e) => !e)}
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse timers' : 'Expand timers'}
-              className={`flex-shrink-0 min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-sm rounded-full active:scale-95 transition-transform focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 ${expanded ? 'self-start' : ''}`}
+              className={`group flex-shrink-0 min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-sm text-[color:var(--color-text)] rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 ${expanded ? 'self-start' : ''}`}
             >
-              {expanded ? '▾' : '▸'}
+              <span className={KEY_FACE}>{expanded ? '▾' : '▸'}</span>
             </button>
             <AnimatePresence initial={false}>
               {timers.map((t) => (

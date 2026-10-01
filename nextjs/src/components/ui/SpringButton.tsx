@@ -34,6 +34,8 @@ interface SpringButtonProps {
   title?: string
   /** Accessible name override, e.g. to name the dish a generic label acts on. */
   'aria-label'?: string
+  /** Test hook, passed to the underlying `<button>` (issue #745). */
+  'data-testid'?: string
   /**
    * `primary` (theme primary fill), `secondary` (surface fill) or `danger`
    * (the theme-invariant expired rose with its dark-red text, 7:1; for
@@ -136,6 +138,7 @@ export default function SpringButton({
   disabled,
   title,
   'aria-label': ariaLabel,
+  'data-testid': testId,
   variant: variantProp,
   size = 'md',
   fullWidth = false,
@@ -175,6 +178,7 @@ export default function SpringButton({
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
+      data-testid={testId}
       aria-busy={loading || undefined}
       style={style}
       data-keycap={variant === 'plain' ? undefined : variant}
