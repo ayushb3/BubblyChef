@@ -108,10 +108,15 @@ export default function MealTimelineTable({
       <div
         className="grid items-end gap-1.5 border-b-2 border-[color:var(--color-text)] pb-1.5 text-xs leading-[15px] font-extrabold"
         style={grid(columns.length)}
+        data-testid="meal-timeline-lane-headers"
       >
-        <span className="sr-only">Time</span>
+        {/* The time track. It must be an in-flow grid item: an `sr-only` (absolutely positioned)
+            child takes no cell, which slid every lane header one track left (issue #800). */}
+        <span>
+          <span className="sr-only">Time</span>
+        </span>
         {columns.map(({ column, title }) => (
-          <span key={column} className="flex min-w-0 flex-col gap-[3px]">
+          <span key={column} data-column={column} className="flex min-w-0 flex-col gap-[3px]">
             <span
               aria-hidden="true"
               className={`h-2 rounded-full border-[1.5px] border-[color:var(--color-text)] ${DISH_BG[column]}`}
@@ -139,6 +144,7 @@ export default function MealTimelineTable({
           {columns.map(({ column }) => (
             <div
               key={column}
+              data-column={column}
               className="rounded-[10px] bg-[var(--color-text)] px-2 py-1.5 text-center text-xs font-extrabold text-[color:var(--color-surface)]"
             >
               Serve
@@ -273,7 +279,7 @@ function CellView({
   progress?: MealTimelineProgress
 }) {
   if (!cell) {
-    return <div />
+    return <div data-column={column} />
   }
 
   const base = 'rounded-[10px] px-2 py-1.5 text-[11px] leading-[14px] font-bold text-[color:var(--color-text)]'
@@ -300,6 +306,7 @@ function CellView({
           style={progressStyle}
           data-testid="meal-timeline-cell-start"
           data-look="solid"
+          data-column={column}
           data-status={status}
           aria-current={isCurrent ? 'step' : undefined}
         >
@@ -323,6 +330,7 @@ function CellView({
           style={progressStyle}
           data-testid="meal-timeline-cell-ongoing"
           data-look="hatched"
+          data-column={column}
           data-status={status}
           aria-current={isCurrent ? 'step' : undefined}
         >
@@ -337,13 +345,13 @@ function CellView({
     case 'waiting':
       // This dish hasn't started: a blank cell, said aloud for screen readers.
       return (
-        <div data-testid="meal-timeline-cell-waiting">
+        <div data-testid="meal-timeline-cell-waiting" data-column={column}>
           <span className="sr-only">waiting to start</span>
         </div>
       )
     case 'done':
       return (
-        <div className={`${base} ${HATCHED}`} data-testid="meal-timeline-cell-done" data-look="hatched">
+        <div className={`${base} ${HATCHED}`} data-testid="meal-timeline-cell-done" data-look="hatched" data-column={column}>
           done · keep warm
         </div>
       )
