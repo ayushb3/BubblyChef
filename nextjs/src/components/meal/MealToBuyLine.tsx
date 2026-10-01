@@ -6,8 +6,9 @@
  * "2 to buy: parsley, 1 lemon" with an "Add to grocery list" key. The missing
  * items come from the existing read-only meal-to-buy endpoint
  * (`fetchMealToBuy`, deterministic, no writes). The key puts exactly those
- * items on the client-side grocery list (`addToGroceryList`, which adopts a
- * food already on the list instead of duplicating it) and the line crossfades
+ * items on the client-side grocery list (`addMissingToGroceryList`, which adopts a
+ * food already on the list instead of duplicating it and leaves a ticked one
+ * ticked) and the line crossfades
  * to a confirmation with the count. A link to open the list comes when the
  * list gets its own page (issue #497).
  *
@@ -24,8 +25,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import SpringButton from '@/components/ui/SpringButton'
 import { fetchMealToBuy } from '@/lib/api/grocery'
-import { groceryFoodKey } from '@/lib/grocery'
-import { addToGroceryList, loadGroceryLines } from '@/lib/grocery-store'
+import { addMissingToGroceryList } from '@/lib/grocery-store'
 import { fetchUserId } from '@/hooks/useGroceryCount'
 import { springs, useMotionConfig } from '@/lib/motion'
 
@@ -98,17 +98,10 @@ export default function MealToBuyLine({ mealId, signature }: MealToBuyLineProps)
 
   function handleAdd() {
     if (!user.data) return
-    // A re-add must be harmless: `addManualLines` un-checks a food that is
-    // already listed (right for "I just asked for it again" from a pantry
-    // item), but here a ticked line means it was bought at the shop, so it
-    // is left exactly as it is.
-    const checked = new Set(
-      loadGroceryLines(user.data)
-        .filter((l) => l.checked)
-        .map((l) => l.key),
-    )
-    const fresh = names.filter((n) => !checked.has(groceryFoodKey(n)))
-    if (fresh.length > 0) addToGroceryList(user.data, fresh)
+    // A re-add must be harmless: a ticked line was bought at the shop, so
+    // `addMissingToGroceryList` leaves it as it is (issue #787 shares this
+    // with the recipe card's add).
+    addMissingToGroceryList(user.data, names)
     setAddedFor({ key, count: names.length })
   }
 
