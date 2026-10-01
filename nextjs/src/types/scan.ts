@@ -24,6 +24,8 @@ export interface ScanResult {
   skipped: ScannedItem[]        // < 0.5              → unchecked, collapsed
   total_items: number
   warnings: string[]            // always present, may be empty
+  /** The parse's document-kind verdict (#856). `false` = not a receipt; missing = a receipt. */
+  is_receipt?: boolean
 }
 
 /** An item confirmed by the user, ready to be added to the pantry. */
