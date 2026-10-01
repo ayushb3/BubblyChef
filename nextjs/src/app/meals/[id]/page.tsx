@@ -8,6 +8,7 @@ import BubblesMascot from '@/components/ui/BubblesMascot'
 import FadeInView from '@/components/ui/FadeInView'
 import SpringButton from '@/components/ui/SpringButton'
 import MealTimelineTable, { timelineNotes } from '@/components/meal/MealTimelineTable'
+import MealToBuyLine from '@/components/meal/MealToBuyLine'
 import ServeAtControl, { type ServeAtMode } from '@/components/meal/ServeAtControl'
 import SideAlternativesRow from '@/components/meal/SideAlternativesRow'
 import RecipeCard from '@/components/recipes/RecipeCard'
@@ -702,6 +703,14 @@ export default function MealDetailPage() {
             )}
             <MealTimelineTable timeline={timeline} columns={columns} anchor={anchor} />
           </div>
+        </FadeInView>
+
+        {/* "N to buy" line (issue #745) — what the pantry lacks, one tap onto the grocery list. */}
+        <FadeInView delay={0.13}>
+          <MealToBuyLine
+            mealId={meal.id}
+            signature={`${meal.servings}:${dishesSorted.map((d) => d.recipe.id).join(',')}`}
+          />
         </FadeInView>
 
         {/* Cook-along entry (issue #653; finish banner + S5 issue #654 §5) */}
