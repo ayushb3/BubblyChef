@@ -119,11 +119,20 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
     ) {
       return false // nothing to read out of it
     }
-    const fresh: ManualRow[] = parsed.map((p) => ({
+    // The first piece keeps what the user set on the row before typing the list
+    // (its category and expiry date); the rest start from the defaults.
+    const fresh: ManualRow[] = parsed.map((p, i) => ({
       ...newRow(),
       name: p.name,
       quantity: p.quantity,
       unit: p.unit,
+      ...(i === 0
+        ? {
+            category: row.category,
+            expiry_date: row.expiry_date,
+            estimated_expiry: row.estimated_expiry,
+          }
+        : {}),
     }))
     // Review rows start as compact summaries (tap to edit), like any filled row.
     setCollapsedIds((prev) => {
@@ -168,7 +177,13 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
   }
 
   const handleRowBlur = (row: ManualRow, e: React.FocusEvent<HTMLDivElement>) => {
-    // Only the name field turns typed text into rows; other fields leaving is just a blur.
+    const related = e.relatedTarget
+    // React's onBlur bubbles (focusout), so a move from the name to this row's
+    // own Quantity or Unit arrives here too. Focus staying inside the row is not
+    // leaving it: nothing splits or collapses, and focus is not dropped.
+    if (related && e.currentTarget.contains(related)) return
+    // Only the name field turns typed text into rows (#851); a null relatedTarget
+    // (a click on something unfocusable, the window losing focus) counts as leaving.
     if (
       e.target instanceof HTMLInputElement &&
       e.target.getAttribute('aria-label') === 'Item name' &&
@@ -179,11 +194,10 @@ export default function TypeTab({ onItemsReady }: TypeTabProps) {
     // A row that isn't filled has nothing to summarize and would hide its
     // own missing name behind a collapse — never auto-collapse it.
     if (!isFilled(row)) return
-    const related = e.relatedTarget
     // Conservative: only collapse when we can confirm focus actually left
     // this row's container. An indeterminate relatedTarget (null) is left
     // alone rather than guessed at.
-    if (!related || e.currentTarget.contains(related)) return
+    if (!related) return
     // Focus is moving to "+ Add another item", whose click collapses filled rows
     // itself. Collapsing here, on the press, would shrink the layout under
     // the pointer before the release lands.

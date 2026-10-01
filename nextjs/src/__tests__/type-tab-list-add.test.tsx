@@ -125,6 +125,39 @@ describe('typing a list into the name field (#851)', () => {
     expect(mockBulkAdd.mock.calls[0][0][0]).toMatchObject({ name: 'chicken', quantity: 2, unit: 'lb' })
   })
 
+  it('tabbing from the name to the same row\'s Quantity keeps the row and the focus', async () => {
+    renderSheet()
+    fireEvent.change(nameInput(), { target: { value: '2 lb chicken' } })
+    const quantity = screen.getByLabelText('Quantity')
+    quantity.focus()
+    // Focus moves inside the row: the blur carries the Quantity field as relatedTarget.
+    fireEvent.blur(nameInput(), { relatedTarget: quantity })
+
+    expect(nameInput()).toHaveValue('2 lb chicken')
+    expect(screen.queryByRole('button', { name: /Edit item 1/i })).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(quantity)
+
+    // Leaving the row for real (focus to something outside it) then reads the entry.
+    const outside = screen.getByRole('button', { name: /Add another item/i })
+    fireEvent.blur(quantity, { relatedTarget: outside })
+    fireEvent.blur(nameInput(), { relatedTarget: outside })
+    expect(await screen.findByRole('button', { name: /Edit item 1: chicken, 2 lb/i })).toBeInTheDocument()
+  })
+
+  it('a list typed into a row with a hand-set category and expiry keeps both on the first piece', async () => {
+    renderSheet()
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'dairy' } })
+    fireEvent.change(screen.getByLabelText('Expiry date'), { target: { value: '2026-10-20' } })
+    fireEvent.change(nameInput(), { target: { value: 'eggs, milk' } })
+    fireEvent.blur(nameInput(), { relatedTarget: document.body })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Add 2 Items/i }))
+    await waitFor(() => expect(mockBulkAdd).toHaveBeenCalledTimes(1))
+    const [first, second] = mockBulkAdd.mock.calls[0][0]
+    expect(first).toMatchObject({ name: 'eggs', category: 'dairy', expiry_date: '2026-10-20' })
+    expect(second).toMatchObject({ name: 'milk', category: 'other', expiry_date: null })
+  })
+
   it('leaves a plain name and a hand-set quantity alone', async () => {
     renderSheet()
     fireEvent.change(nameInput(), { target: { value: 'Milk' } })
