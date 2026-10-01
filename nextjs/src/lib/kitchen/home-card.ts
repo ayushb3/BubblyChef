@@ -8,6 +8,7 @@
  *   1. something in progress: a cook left mid-recipe, then scanned groceries not
  *      put away
  *   2. tonight's planned meal (a saved meal set to Serve at today)
+ *   2b. an empty pantry: the first-run prompt, Scan receipt (beats everything below)
  *   3. food that expires today or tomorrow (skipped when expiry priority is Off)
  *   4. mealtime with nothing urgent (06-10, 11-14, 17-21 local): the ranked starter pills
  *   5. a quiet moment: a tip, alternating by day with a seasonal idea
@@ -22,14 +23,16 @@
  *  - once a day: a nudge is counted per fingerprint per local day. A fingerprint
  *    already shown today is skipped, so a later visit that day falls through to
  *    the next case. (A nudge stays up for the visit it first appears on because
- *    the caller reads `seen` once, at the start of the visit.) Case 5 is never capped.
+ *    the caller reads `seen` once, at the start of the visit.) Case 5 and the empty-pantry prompt are never capped.
  *  - Not now: a dismissed fingerprint stays away until it changes, a different
  *    item, step, scan or meal. It applies to every case, case 5 included.
  *
  * A fingerprint names the thing the nudge is about, so "the same nudge" is exactly
  * "the same thing": `cook:recipe:<id>:<step>`, `scan:<savedAt>`,
- * `planned:<mealId>:<serveAt>`, `expiring:<item>:<date>`, `mealtime:<meal>`,
- * `quiet:tip:<text>` / `quiet:season:<month>`.
+ * `planned:<mealId>:<serveAt>`, `expiring:<item>:<date>`. A nudge with nothing in
+ * it that can change carries the local day instead, so Not now lasts for that day
+ * and not forever: `empty:<day>`, `mealtime:<meal>:<day>`, `quiet:tip:<day>:<text>`,
+ * `quiet:season:<day>:<produce>`.
  */
 import type { StarterContext } from '@/types/chat'
 import type { ExpiryPriority } from '@/lib/expiry-priority'
@@ -39,7 +42,7 @@ import { localDay } from '@/lib/kitchen/home-card-store'
 import { isPlannedForToday, type PlannedTonight } from '@/lib/kitchen/planned-tonight'
 import { dayOfYear, seasonalProduce, tipRotation } from '@/lib/kitchen/quiet-ideas'
 
-export type HomeCardKind = 'cook' | 'scan' | 'planned' | 'expiring' | 'mealtime' | 'quiet'
+export type HomeCardKind = 'cook' | 'scan' | 'planned' | 'empty' | 'expiring' | 'mealtime' | 'quiet'
 
 /** What a button does when it is not a link: the card's component wires these. */
 export type HomeCardActionId =
@@ -101,6 +104,8 @@ export interface HomeCardSnapshot {
   cook: CookResume | null
   pending: PendingScan | null
   planned: PlannedTonight | null
+  /** How many items are in the pantry, or `null` when that could not be read (not the same as none). */
+  pantryCount: number | null
   expiring: ExpiringItem[]
   expiryPriority: ExpiryPriority
   /** The starter-pill context, or `null` while it loads or if it failed. */
@@ -252,6 +257,17 @@ function expiringCard(item: ExpiringItem, starter: StarterContext | null): HomeC
   }
 }
 
+/** First run: nothing in the kitchen yet. Scanning a receipt is the quickest way to stock it. */
+function emptyCard(now: Date): HomeCard {
+  return {
+    kind: 'empty',
+    fingerprint: `empty:${localDay(now)}`,
+    message: "Your kitchen's empty. Let's stock up!",
+    options: [{ label: 'Add by hand', href: '/?add=type' }],
+    primary: { label: 'Scan receipt', href: '/?add=scan' },
+  }
+}
+
 const SURPRISE_ME: HomeCardAction = {
   label: 'Surprise me',
   href: askHref('Surprise me with something to cook'),
@@ -267,7 +283,7 @@ function mealtimeCard(slot: MealSlot, now: Date, starter: StarterContext | null)
     if (/^Plan dinner for \d+$/.test(chip.message)) continue
     let href: string
     const expiring = starter?.expiring.find((e) => ingredientSeedMessage(e.name) === chip.message)
-    if (chip.kind === 'action' && chip.action === 'open_scan') href = '/pantry?add=scan'
+    if (chip.kind === 'action' && chip.action === 'open_scan') href = '/?add=scan'
     else if (expiring) href = cookThisHref(expiring.name, expiring.expiry_date)
     else href = askHref(chip.message)
     options.push({ label: chip.label, href })
@@ -277,7 +293,7 @@ function mealtimeCard(slot: MealSlot, now: Date, starter: StarterContext | null)
   const word = slot === 'breakfast' ? 'Breakfast' : slot === 'lunch' ? 'Lunch' : 'Dinner'
   return {
     kind: 'mealtime',
-    fingerprint: `mealtime:${slot}`,
+    fingerprint: `mealtime:${slot}:${localDay(now)}`,
     message: `${word} time! What are you in the mood for?`,
     options,
     primary: PLAN_DINNER,
@@ -291,7 +307,7 @@ function quietCard(s: HomeCardSnapshot): HomeCard {
     const text = tips[s.tipTaps % tips.length]
     return {
       kind: 'quiet',
-      fingerprint: `quiet:tip:${text}`,
+      fingerprint: `quiet:tip:${localDay(s.now)}:${text}`,
       message: `Tip: ${text}`,
       options: [{ label: 'Another tip', action: 'another-tip' }],
       primary: { label: 'Show me how', href: tipChatHref(text) },
@@ -300,7 +316,7 @@ function quietCard(s: HomeCardSnapshot): HomeCard {
   const produce = seasonalProduce(s.now)
   return {
     kind: 'quiet',
-    fingerprint: `quiet:season:${s.now.getFullYear()}-${s.now.getMonth() + 1}:${produce}`,
+    fingerprint: `quiet:season:${localDay(s.now)}:${produce}`,
     message: `In season right now: ${produce}. Want an idea for tonight?`,
     options: [{ label: 'Another tip', action: 'another-tip' }],
     primary: { label: 'Show me how', href: planDinnerHref([produce]) },
@@ -319,32 +335,45 @@ export function pickHomeCard(snapshot: HomeCardSnapshot): HomeCard | null {
   const allowed = (card: HomeCard, capped: boolean): boolean =>
     !dismissed.has(card.fingerprint) && !(capped && snapshot.seen[card.fingerprint] === today)
 
-  const candidates: (() => HomeCard | null)[] = [
-    () => (snapshot.cook ? cookCard(snapshot.cook) : null),
-    () => (snapshot.pending ? scanCard(snapshot.pending) : null),
-    () =>
-      snapshot.planned &&
-      isPlannedForToday(snapshot.planned, snapshot.now) &&
-      snapshot.now.getTime() <= snapshot.planned.serveAtMs + PLANNED_GRACE_MS
-        ? plannedCard(snapshot.planned, snapshot.now)
-        : null,
-    () => {
-      if (snapshot.expiryPriority === 'off') return null
-      const item = urgentItem(snapshot.expiring)
-      return item ? expiringCard(item, snapshot.starter) : null
+  const candidates: { build: () => HomeCard | null; capped: boolean }[] = [
+    { build: () => (snapshot.cook ? cookCard(snapshot.cook) : null), capped: true },
+    { build: () => (snapshot.pending ? scanCard(snapshot.pending) : null), capped: true },
+    {
+      build: () =>
+        snapshot.planned &&
+        isPlannedForToday(snapshot.planned, snapshot.now) &&
+        snapshot.now.getTime() <= snapshot.planned.serveAtMs + PLANNED_GRACE_MS
+          ? plannedCard(snapshot.planned, snapshot.now)
+          : null,
+      capped: true,
     },
-    () => {
-      const slot = mealSlot(snapshot.now)
-      return slot ? mealtimeCard(slot, snapshot.now, snapshot.starter) : null
+    // First run: an empty pantry beats everything below (food that expires, a
+    // mealtime, a tip all make no sense over nothing). Not capped to once a day, so
+    // a new user keeps being asked; Not now still sends it away for the day.
+    { build: () => (snapshot.pantryCount === 0 ? emptyCard(snapshot.now) : null), capped: false },
+    {
+      build: () => {
+        if (snapshot.expiryPriority === 'off') return null
+        const item = urgentItem(snapshot.expiring)
+        return item ? expiringCard(item, snapshot.starter) : null
+      },
+      capped: true,
+    },
+    {
+      build: () => {
+        const slot = mealSlot(snapshot.now)
+        return slot ? mealtimeCard(slot, snapshot.now, snapshot.starter) : null
+      },
+      capped: true,
     },
   ]
 
-  for (const build of candidates) {
+  for (const { build, capped } of candidates) {
     const card = build()
-    if (card && allowed(card, true)) return card
+    if (card && allowed(card, capped)) return card
   }
 
-  // Case 5 fills every gap and is never capped; only a Not now can hide it.
+  // The quiet moment fills every gap and is never capped; only a Not now can hide it.
   const quiet = quietCard(snapshot)
   return allowed(quiet, false) ? quiet : null
 }

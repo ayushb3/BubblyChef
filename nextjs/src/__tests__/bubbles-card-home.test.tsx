@@ -9,7 +9,7 @@
  * Only `Date` is faked, so React Query and waitFor keep their timers.
  */
 import React from 'react'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import HeroHome from '@/components/dashboard/HeroHome'
 import { getActiveCookSession, saveCookProgress, startGuidedCookSession } from '@/lib/cook-session'
@@ -59,9 +59,11 @@ interface World {
   expiring?: Array<Record<string, unknown>>
   offer?: unknown
   meal?: Meal
+  /** `'empty'`: nothing in the pantry. `'failed'`: the pantry read errors (unknown, not empty). */
+  pantry?: 'empty' | 'failed'
 }
 
-function mockWorld({ expiring = [], offer = null, meal }: World = {}) {
+function mockWorld({ expiring = [], offer = null, meal, pantry }: World = {}) {
   global.fetch = jest.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes('/api/decorations')) return jsonResponse({ decorations: [], total: 0 })
@@ -71,6 +73,8 @@ function mockWorld({ expiring = [], offer = null, meal }: World = {}) {
     if (url.includes('/api/recipes/r-lemon')) return jsonResponse(LEMON_PASTA)
     if (meal && url.includes(`/api/meals/${meal.id}`)) return jsonResponse(meal)
     if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: expiring, count: expiring.length })
+    if (url.includes('/api/pantry') && pantry === 'failed') return jsonResponse({ error: 'down' }, false)
+    if (url.includes('/api/pantry') && pantry === 'empty') return jsonResponse({ items: [], total_count: 0 })
     if (url.includes('/api/pantry')) {
       return jsonResponse({ items: [{ id: 'p1', name: 'eggs' }, ...expiring], total_count: 1 + expiring.length })
     }
@@ -392,6 +396,50 @@ describe('case 4: mealtime, nothing urgent', () => {
   })
 })
 
+describe('an empty pantry: the first-run prompt', () => {
+  it('says so with Scan receipt, and beats mealtime and the tip', async () => {
+    fixClock(DINNER)
+    mockWorld({ pantry: 'empty' })
+    renderHome()
+
+    const c = await card()
+    expect(c).toHaveAttribute('data-card-kind', 'empty')
+    expect(message()).toBe("Your kitchen's empty. Let's stock up!")
+    expect(keys()).toEqual(['Add by hand', 'Scan receipt'])
+    expect(within(c).getByRole('link', { name: 'Scan receipt' })).toHaveAttribute('href', '/?add=scan')
+  })
+
+  it('beats the tip between meals too', async () => {
+    mockWorld({ pantry: 'empty' })
+    renderHome()
+    expect(await card()).toHaveAttribute('data-card-kind', 'empty')
+  })
+
+  it('a pantry that failed to load is not called empty', async () => {
+    mockWorld({ pantry: 'failed' })
+    renderHome()
+    expect(await card()).toHaveAttribute('data-card-kind', 'quiet')
+  })
+
+  it('Not now holds for the day, and it asks again tomorrow', async () => {
+    mockWorld({ pantry: 'empty' })
+    const first = renderHome()
+    fireEvent.click(within(await card()).getByRole('button', { name: 'Not now' }))
+    await waitFor(() => expect(screen.queryByTestId('bubbles-card')).not.toBeInTheDocument())
+    first.unmount()
+
+    renderHome()
+    await card()
+    expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'quiet')
+    jest.useRealTimers()
+    cleanup()
+
+    fixClock('2026-10-02T15:30:00')
+    renderHome()
+    expect(await card()).toHaveAttribute('data-card-kind', 'empty')
+  })
+})
+
 describe('case 5: a quiet moment', () => {
   it("shows the daily tip, Another tip moves on, Show me how seeds the chat", async () => {
     mockWorld()
@@ -459,6 +507,27 @@ describe('once a day, per nudge', () => {
 })
 
 describe('Not now', () => {
+  it('a dismissed mealtime card is back tomorrow, not never', async () => {
+    fixClock(DINNER)
+    mockWorld()
+    const first = renderHome()
+    fireEvent.click(within(await card()).getByRole('button', { name: 'Not now' }))
+    await waitFor(() => expect(screen.queryByTestId('bubbles-card')).not.toBeInTheDocument())
+    first.unmount()
+
+    // Same evening, another visit: away.
+    const second = renderHome()
+    await card()
+    expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'quiet')
+    second.unmount()
+
+    // The next evening, same slot: back.
+    jest.useRealTimers()
+    fixClock('2026-10-02T18:30:00')
+    renderHome()
+    expect(await card()).toHaveAttribute('data-card-kind', 'mealtime')
+  })
+
   it('hides the card, and it stays hidden until what it is about changes', async () => {
     startGuidedCookSession('r-lemon')
     saveCookProgress('r-lemon', 3)

@@ -168,7 +168,7 @@ describe('home card: the daily tip (#143, #755)', () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/pantry/expiring')) return jsonResponse({ items: [], count: 0 })
-      if (url.includes('/api/pantry')) return jsonResponse({ items: [], total_count: 0 })
+      if (url.includes('/api/pantry')) return jsonResponse({ items: [{ id: 'p1', name: 'eggs' }], total_count: 1 })
       if (url.includes('/api/ai/dashboard/daily')) {
         return jsonResponse({
           tip: { text: 'Zest citrus before juicing it.', category: 'technique' },

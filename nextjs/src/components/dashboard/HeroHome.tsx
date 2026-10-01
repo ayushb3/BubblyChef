@@ -408,6 +408,7 @@ export default function HeroHome({
           the milestone unlock offer (#522) in its place while one is pending. */}
       <HomeCardSlot
         loaded={!loading}
+        pantryCount={items ? totalCount : null}
         expiring={expiring}
         expiryPriority={initialExpiryPriority}
         tip={tip}

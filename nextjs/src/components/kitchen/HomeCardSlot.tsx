@@ -57,6 +57,8 @@ import { movePlannedToTomorrow } from '@/lib/kitchen/planned-tonight'
 export interface HomeCardSlotProps {
   /** The pantry, expiring and daily-tip reads have settled (the card waits for them). */
   loaded: boolean
+  /** Items in the pantry, or `null` when the read failed (unknown is not empty). */
+  pantryCount: number | null
   expiring: ExpiringItem[]
   /** `user_profiles.expiry_priority`, read server-side by the page. */
   expiryPriority: ExpiryPriority
@@ -80,6 +82,7 @@ function moodFor(card: HomeCard, hasUnusedExpired: boolean): BubblesState {
 
 export default function HomeCardSlot({
   loaded,
+  pantryCount,
   expiring,
   expiryPriority,
   tip,
@@ -112,6 +115,7 @@ export default function HomeCardSlot({
               ? { savedAt: pending.savedAt, itemCount: pendingLineCount(pending) }
               : null,
             planned,
+            pantryCount,
             expiring,
             expiryPriority,
             starter: starter.data ?? null,
@@ -121,7 +125,7 @@ export default function HomeCardSlot({
             dismissed: records.dismissed,
           })
         : null,
-    [ready, now, cook, pending, planned, expiring, expiryPriority, starter.data, tip, tipTaps, records],
+    [ready, now, cook, pending, planned, pantryCount, expiring, expiryPriority, starter.data, tip, tipTaps, records],
   )
 
   // Cases 3 and 4 read the starter context (the make-again option, the pills): wait

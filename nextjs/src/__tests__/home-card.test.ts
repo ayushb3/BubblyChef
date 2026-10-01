@@ -40,6 +40,7 @@ function snap(over: Partial<HomeCardSnapshot> = {}): HomeCardSnapshot {
     cook: null,
     pending: null,
     planned: null,
+    pantryCount: 12,
     expiring: [],
     expiryPriority: 'gentle',
     starter: STARTER,
@@ -119,6 +120,19 @@ describe('each case alone', () => {
       }),
     )!
     expect(card.message).toMatch(/^Lunch for one at 12:30\./)
+  })
+
+  it('2b. an empty pantry: the first-run prompt, Scan receipt', () => {
+    const card = pickHomeCard(snap({ pantryCount: 0 }))!
+    expect(card.kind).toBe('empty')
+    expect(card.message).toBe("Your kitchen's empty. Let's stock up!")
+    expect(labels(card)).toEqual(['Add by hand', 'Scan receipt'])
+    expect(card.primary.href).toBe('/?add=scan')
+    expect(card.options[0].href).toBe('/?add=type')
+  })
+
+  it('2b. an unknown pantry (the read failed) is not an empty one', () => {
+    expect(pickHomeCard(snap({ pantryCount: null }))!.kind).toBe('quiet')
   })
 
   it('3. food expiring today', () => {
@@ -293,6 +307,18 @@ describe('precedence: the first case that matches wins', () => {
     ).toBe('quiet')
   })
 
+  it("an empty pantry loses to a cook, a pending scan and tonight's plan", () => {
+    expect(pickHomeCard(everything({ pantryCount: 0 }))!.kind).toBe('cook')
+    expect(pickHomeCard(everything({ pantryCount: 0, cook: null }))!.kind).toBe('scan')
+    expect(pickHomeCard(everything({ pantryCount: 0, cook: null, pending: null }))!.kind).toBe('planned')
+  })
+
+  it('an empty pantry beats mealtime and the quiet moment', () => {
+    const rest = { cook: null, pending: null, planned: null, expiring: [], pantryCount: 0 }
+    expect(pickHomeCard(everything({ ...rest }))!.kind).toBe('empty')
+    expect(pickHomeCard(everything({ ...rest, now: at(15, 30) }))!.kind).toBe('empty')
+  })
+
   it('is deterministic: the same snapshot gives the same card', () => {
     expect(pickHomeCard(everything())).toEqual(pickHomeCard(everything()))
   })
@@ -413,6 +439,42 @@ describe('Not now', () => {
     expect(
       pickHomeCard(snap({ expiring: [{ ...ROMAINE, name: 'kale' }], dismissed: [exp.fingerprint] }))!.kind,
     ).toBe('expiring')
+  })
+
+  it('a dismissed mealtime card is back tomorrow at the same slot (it is not forever)', () => {
+    const today = pickHomeCard(snap({ now: at(18, 30) }))!
+    expect(today.kind).toBe('mealtime')
+    // Same day, later: still away.
+    expect(pickHomeCard(snap({ now: at(19, 30), dismissed: [today.fingerprint] }))!.kind).not.toBe('mealtime')
+    // Tomorrow, same slot: back.
+    const tomorrow = pickHomeCard(snap({ now: at(18, 30, 2), dismissed: [today.fingerprint] }))!
+    expect(tomorrow.kind).toBe('mealtime')
+    expect(tomorrow.fingerprint).not.toBe(today.fingerprint)
+  })
+
+  it('each meal slot has its own dismissal', () => {
+    const dinner = pickHomeCard(snap({ now: at(18, 30) }))!
+    expect(pickHomeCard(snap({ now: at(12, 0), dismissed: [dinner.fingerprint] }))!.kind).toBe('mealtime')
+  })
+
+  it('a dismissed quiet card (tip or seasonal idea) is back the next day, not never', () => {
+    const tip = pickHomeCard(snap({ now: at(15, 30) }))!
+    expect(pickHomeCard(snap({ now: at(15, 30), dismissed: [tip.fingerprint] }))).toBeNull()
+    expect(pickHomeCard(snap({ now: at(15, 30, 3), dismissed: [tip.fingerprint] }))!.kind).toBe('quiet')
+    const season = pickHomeCard(snap({ now: at(15, 30, 2) }))!
+    expect(pickHomeCard(snap({ now: at(15, 30, 2), dismissed: [season.fingerprint] }))).toBeNull()
+    expect(pickHomeCard(snap({ now: at(15, 30, 4), dismissed: [season.fingerprint] }))!.kind).toBe('quiet')
+  })
+
+  it('the empty-pantry prompt is dismissed for the day, then asks again', () => {
+    const empty = pickHomeCard(snap({ pantryCount: 0 }))!
+    expect(pickHomeCard(snap({ pantryCount: 0, dismissed: [empty.fingerprint] }))!.kind).toBe('quiet')
+    expect(pickHomeCard(snap({ pantryCount: 0, now: at(15, 30, 2), dismissed: [empty.fingerprint] }))!.kind).toBe('empty')
+  })
+
+  it('the empty-pantry prompt is not capped to once a day (a new user keeps being asked)', () => {
+    const empty = pickHomeCard(snap({ pantryCount: 0 }))!
+    expect(pickHomeCard(snap({ pantryCount: 0, seen: { [empty.fingerprint]: TODAY } }))!.kind).toBe('empty')
   })
 
   it('dismissing the quiet card leaves no card at all', () => {
