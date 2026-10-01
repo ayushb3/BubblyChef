@@ -452,6 +452,7 @@ BUBBLY_SUPABASE_SECRET_KEY=...          # NOT ..._SERVICE_ROLE_KEY — see note 
 BUBBLY_SUPABASE_JWT_SECRET=...
 BUBBLY_GEMINI_API_KEY=...
 BUBBLY_GEMINI_MODEL=gemini-3.1-flash-lite    # optional
+BUBBLY_GEMINI_FALLBACK_API_KEY=...      # optional — second Gemini key (its own Google project + spend cap), tried only after the primary fails with quota/auth/rate-limit, before Ollama; unset = no second provider (#737)
 BUBBLY_OLLAMA_BASE_URL=http://localhost:11434   # optional
 BUBBLY_AUTO_ADD_CONFIDENCE_THRESHOLD=0.8
 BUBBLY_REVIEW_CONFIDENCE_THRESHOLD=0.5

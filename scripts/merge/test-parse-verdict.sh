@@ -47,15 +47,13 @@ check() {
 check "619 incident: preamble mergeable, real verdict needs-changes" \
   "619-preamble-then-needs-changes.txt" "needs-changes"
 
-# (2) CHANGED from the old shell parser. A heading-only verdict
-#     ("## Re-review (round 3) — `looks mergeable`", no "Verdict:" label at
-#     all) used to be recognised via a dedicated heading rule. The
-#     protected parser has no such rule — it requires the literal "Verdict:"
-#     label — so a heading-only verdict is unreadable to it: `unknown`.
-#     Still fail-closed (a hold, not a merge); just a stricter read than the
-#     old script gave.
-check "round-3 heading (no 'Verdict:' label) is unreadable to the protected parser" \
-  "569-round3-looks-mergeable.txt" "unknown"
+# (2) Issue #571. A heading-only verdict ("## Re-review (round 3) — `looks
+#     mergeable`", no "Verdict:" label at all) is what PR #569's round-3
+#     summary looked like; the gate held it as "no review summary comment
+#     found". review-verdict.cjs now reads a heading that ENDS in one of the
+#     three verdicts (after a dash or colon), so this is `looks-mergeable`.
+check "round-3 heading (no 'Verdict:' label) is read from the heading" \
+  "569-round3-looks-mergeable.txt" "looks-mergeable"
 
 # (3) A plain "**Verdict: needs a human**" line.
 check "explicit needs-a-human verdict" \
@@ -77,15 +75,12 @@ check "marker (unsupported by the protected parser) plus prose with trailing tex
 check "no verdict present" \
   "no-verdict.txt" "unknown"
 
-# (6) CHANGED from the old shell parser. This fixture has no literal
-#     "Verdict:" label at all — just a heading ("## Re-review — needs
-#     changes") and a TL;DR sentence that mentions "verdict" without a
-#     colon immediately after it ("the verdict is needs changes"). The old
-#     shell parser's heading/prose rules read this as needs-changes; the
-#     protected parser requires the literal "Verdict:" label and finds none,
-#     so it's unreadable: `unknown`. Still fail-closed.
-check "heading + prose with no literal 'Verdict:' label: unreadable" \
-  "tldr-mentions-both-phrases.txt" "unknown"
+# (6) This fixture has no literal "Verdict:" label — just a heading ("##
+#     Re-review — needs changes") and a TL;DR sentence that mentions
+#     "verdict" without a colon after it. The heading rule (issue #571)
+#     reads the heading: needs-changes. The prose sentence is not a source.
+check "heading + prose with no literal 'Verdict:' label: the heading is read" \
+  "tldr-mentions-both-phrases.txt" "needs-changes"
 
 # (7) CHANGED from the old shell parser. "**Verdict:** this needs a human to
 #     weigh in on the redirect target, though mechanically the diff
@@ -138,6 +133,27 @@ check "fenced verdict-format example plus real needs-a-human verdict; last line 
 #      passing is coincidental, not because blockquotes are recognised.
 check "blockquoted prior/template verdict; last line wins (and happens to agree)" \
   "blockquoted-prior-verdict-ignored.txt" "looks-mergeable"
+
+# (13) Issue #571. The reviewer prompt asks for a trailing
+#      `<!-- verdict: looks-mergeable -->` marker. It used to be read as the
+#      LAST "Verdict:" label (value "looks-mergeable -->") and made the whole
+#      comment unreadable. A marker that agrees with the label is now fine.
+check "label + trailing marker that agree" \
+  "label-and-marker-agree.txt" "looks-mergeable"
+
+# (14) Heading + marker, no label: both sources agree.
+check "heading + marker that agree, no label" \
+  "heading-and-marker-agree.txt" "looks-mergeable"
+
+# (15) A stale heading that says looks mergeable over a body whose label says
+#      needs changes: sources disagree, so unreadable (fail closed).
+check "heading and label disagree: unreadable" \
+  "heading-disagrees-with-label.txt" "unknown"
+
+# (16) The marker token for "needs a human" is `needs-human` (no "a"). It once
+#      parsed as unreadable, so a fully compliant escalation read as `unknown`.
+check "needs-a-human label + unfenced needs-human marker" \
+  "needs-human-marker.txt" "needs-human"
 
 echo
 echo "$pass passed, $fail failed"
