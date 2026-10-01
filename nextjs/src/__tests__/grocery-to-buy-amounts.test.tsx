@@ -11,7 +11,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MealToBuyLine from '@/components/meal/MealToBuyLine'
 import { groceryEntriesFromDetail } from '@/lib/meal-to-buy'
-import { addMissingToGroceryList, loadGroceryLines, saveGroceryLines } from '@/lib/grocery-store'
+import {
+  addMissingToGroceryList,
+  addToGroceryList,
+  loadGroceryLines,
+  saveGroceryLines,
+} from '@/lib/grocery-store'
 import { setLineChecked } from '@/lib/grocery'
 
 const detailMock = jest.fn()
@@ -105,6 +110,20 @@ describe('addMissingToGroceryList with amounts', () => {
     const lines = loadGroceryLines('u1')
     expect(lines.find((l) => l.name === 'feta')).toMatchObject({ quantity: 200, unit: 'g', category: 'dairy' })
     expect(lines.find((l) => l.name === 'parsley')).toMatchObject({ quantity: null, category: 'other' })
+  })
+
+  it('keeps the amount already on a line (milk 2 L stays 2 L after a meal needs 100 ml)', () => {
+    addToGroceryList('u1', [{ name: 'milk', quantity: 2, unit: 'L', category: 'dairy' }])
+    addMissingToGroceryList('u1', [{ name: 'milk', quantity: 100, unit: 'ml', category: 'dairy' }])
+    const lines = loadGroceryLines('u1')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatchObject({ name: 'milk', quantity: 2, unit: 'L', checked: false })
+  })
+
+  it('fills the amount from the meal when the line on the list has none', () => {
+    addToGroceryList('u1', ['milk'])
+    addMissingToGroceryList('u1', [{ name: 'milk', quantity: 100, unit: 'ml' }])
+    expect(loadGroceryLines('u1')[0]).toMatchObject({ quantity: 100, unit: 'ml' })
   })
 
   it('still leaves a ticked line exactly as it was (issue #787)', () => {

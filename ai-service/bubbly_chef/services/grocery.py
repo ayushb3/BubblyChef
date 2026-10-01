@@ -16,6 +16,7 @@ after the user confirms.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -78,11 +79,17 @@ class ToBuyItem(BaseModel):
 
 
 def _amount(raw: Any) -> float | None:
-    """A recipe quantity as a positive float, or None (absent, zero, or not a number)."""
-    if isinstance(raw, bool) or not isinstance(raw, int | float):
+    """A recipe quantity as a positive float, or None (absent, zero, or not a number).
+
+    A numeric string ("200", from a legacy row) counts.
+    """
+    if isinstance(raw, bool):
         return None
-    value = float(raw)
-    return value if value > 0 else None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
 
 
 def _same_unit(a: str | None, b: str | None) -> bool:
@@ -123,11 +130,13 @@ def to_buy_items_for_dishes(dishes: list[dict[str, Any]], pantry: list[Any]) -> 
                     unit=unit if quantity is not None else None,
                     category=resolve_category(name),
                 )
-            elif dish_position not in item.dish_positions:
-                item.dish_positions.append(dish_position)
-                item.dish_names.append(name)
-                # Add the amounts up only when they count the food the same way;
-                # otherwise keep the first dish's (the list line is editable).
+            else:
+                if dish_position not in item.dish_positions:
+                    item.dish_positions.append(dish_position)
+                    item.dish_names.append(name)
+                # A second line for the same food, in this dish or another, adds up
+                # only when both count it the same way; otherwise the first amount
+                # stays (the list line is editable).
                 if quantity is not None:
                     if item.quantity is None:
                         item.quantity, item.unit = quantity, unit

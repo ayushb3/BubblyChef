@@ -112,3 +112,43 @@ async def test_the_route_returns_amounts_and_keeps_to_buy_unchanged(monkeypatch)
     assert body["items"][0]["quantity"] == 200
     assert body["items"][0]["unit"] == "g"
     assert body["items"][0]["category"] == resolve_category("feta")
+
+
+@pytest.mark.asyncio
+async def test_a_food_listed_twice_in_one_dish_adds_up() -> None:
+    got = await _by_name(
+        [
+            _dish(
+                0,
+                [
+                    {"name": "feta", "quantity": 200, "unit": "g"},
+                    {"name": "feta", "quantity": 50, "unit": "g"},
+                ],
+            )
+        ]
+    )
+    assert len(got) == 1
+    assert (got["feta"].quantity, got["feta"].unit) == (250, "g")
+    assert got["feta"].dish_positions == [0]
+
+
+@pytest.mark.asyncio
+async def test_a_food_listed_twice_in_one_dish_in_different_units_keeps_the_first() -> None:
+    got = await _by_name(
+        [
+            _dish(
+                0,
+                [
+                    {"name": "feta", "quantity": 200, "unit": "g"},
+                    {"name": "feta", "quantity": 1, "unit": "cup"},
+                ],
+            )
+        ]
+    )
+    assert (got["feta"].quantity, got["feta"].unit) == (200, "g")
+
+
+@pytest.mark.asyncio
+async def test_a_numeric_string_quantity_counts() -> None:
+    got = await _by_name([_dish(0, [{"name": "feta", "quantity": "200", "unit": "g"}])])
+    assert (got["feta"].quantity, got["feta"].unit) == (200, "g")
