@@ -42,15 +42,16 @@ from bubbly_chef.models.recipe import (
     build_structured_steps,
 )
 from bubbly_chef.prompts.recipe import (
+    _MODE_SYSTEM_PROMPTS,
+    _RECIPE_MODE_PANTRY_LINE,
     BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY,
     REMEMBERED_DIETS_CHAT_PREFIX,
     REMEMBERED_DIETS_PROFILE_PREFIX,
-    _MODE_SYSTEM_PROMPTS,
-    _RECIPE_MODE_PANTRY_LINE,
     brainstorm_system_prompt,
     expiring_context_label,
     grounded_recipe_system_prompt,
 )
+
 # Re-exported for callers that import these off this module (e.g.
 # workflows/recipe/__init__.py) — `as`-aliasing makes the re-export explicit
 # so mypy --strict's --no-implicit-reexport doesn't flag it.
@@ -77,8 +78,8 @@ from bubbly_chef.services.food_exclusions import (
 )
 from bubbly_chef.services.recipe_generator import generate_recipe as _generate_recipe_followup
 from bubbly_chef.tools.web_search import search_recipe
-from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions, union_case_insensitive
 from bubbly_chef.workflows.recipe.diet_change import diet_change_reply, resolve_diet_change
+from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions, union_case_insensitive
 from bubbly_chef.workflows.recipe.refine_diet import added_clauses, added_text, negated_text
 from bubbly_chef.workflows.recipe_result import complete_recipe
 from bubbly_chef.workflows.state import (

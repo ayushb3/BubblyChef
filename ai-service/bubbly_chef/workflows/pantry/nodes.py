@@ -8,7 +8,6 @@ they can be dropped directly into the existing StateGraph.
 
 import logging
 from datetime import date
-
 from uuid import uuid4
 
 from bubbly_chef.ai.manager import NoProviderAvailableError
@@ -750,7 +749,7 @@ async def _lot_notes(user_id: str, actions: list[PantryUpsertAction]) -> list[st
             elif renamed:
                 notes.append(
                     f"You have {len(lots)} lots of {name} ({described}); using it takes from "
-                    "the soonest expiry first."
+                    "fresh lots first, soonest expiry first, and expired lots last."
                 )
     except Exception as e:
         logger.warning(f"Could not look up lots for a pantry proposal: {e}")

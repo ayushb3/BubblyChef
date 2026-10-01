@@ -19,7 +19,7 @@
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ThemeProvider } from '@/components/ThemeProvider'
-import ChatRecipeCard from '@/components/chat/ChatRecipeCard'
+import RecipeCard from '@/components/recipes/RecipeCard'
 import type { ChatMessage, ChatResponse } from '@/types/chat'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -175,13 +175,13 @@ describe('ChatRecipeCard "Make it a meal" button (issue #651 PR B)', () => {
   const mealButton = () => screen.queryByRole('button', { name: /make it a meal/i })
 
   it('renders no button without onMakeMeal', () => {
-    render(<ChatRecipeCard recipe={recipe} onTryAnother={jest.fn()} onAlreadyMade={jest.fn()} />)
+    render(<RecipeCard variant="chat" recipe={recipe} onTryAnother={jest.fn()} onAlreadyMade={jest.fn()} />)
     expect(mealButton()).not.toBeInTheDocument()
   })
 
   it('renders a 44px button that names the dish and calls onMakeMeal once', () => {
     const onMakeMeal = jest.fn()
-    render(<ChatRecipeCard recipe={recipe} onMakeMeal={onMakeMeal} />)
+    render(<RecipeCard variant="chat" recipe={recipe} onMakeMeal={onMakeMeal} />)
     const button = screen.getByRole('button', { name: 'Make it a meal: Garlic Butter Pasta' })
     expect(button).toHaveTextContent('Make it a meal')
     expect(button).toBeEnabled()
@@ -191,26 +191,26 @@ describe('ChatRecipeCard "Make it a meal" button (issue #651 PR B)', () => {
   })
 
   it('falls back to the plain visible name when the recipe has no title', () => {
-    render(<ChatRecipeCard recipe={{ ...recipe, title: undefined }} onMakeMeal={jest.fn()} />)
+    render(<RecipeCard variant="chat" recipe={{ ...recipe, title: undefined }} onMakeMeal={jest.fn()} />)
     expect(screen.getByRole('button', { name: /make it a meal/i })).toBeInTheDocument()
   })
 
   it('is disabled when makeMealDisabled is set', () => {
     const onMakeMeal = jest.fn()
-    render(<ChatRecipeCard recipe={recipe} onMakeMeal={onMakeMeal} makeMealDisabled />)
+    render(<RecipeCard variant="chat" recipe={recipe} onMakeMeal={onMakeMeal} makeMealDisabled />)
     expect(mealButton()).toBeDisabled()
     fireEvent.click(mealButton()!)
     expect(onMakeMeal).not.toHaveBeenCalled()
   })
 
   it.each(['pending', 'started'] as const)('is disabled while cookState is %s', (cookState) => {
-    render(<ChatRecipeCard recipe={recipe} onMakeMeal={jest.fn()} cookState={cookState} />)
+    render(<RecipeCard variant="chat" recipe={recipe} onMakeMeal={jest.fn()} cookState={cookState} />)
     expect(mealButton()).toBeDisabled()
   })
 
   it('sits between Try Another and "I already made this"', () => {
     render(
-      <ChatRecipeCard
+      <RecipeCard variant="chat"
         recipe={recipe}
         onTryAnother={jest.fn()}
         onAlreadyMade={jest.fn()}

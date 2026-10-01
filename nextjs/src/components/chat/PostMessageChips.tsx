@@ -1,7 +1,21 @@
 'use client'
 
+import { motion } from 'framer-motion'
 import Chip from '@/components/ui/Chip'
 import type { ChipTone } from '@/components/ui/Chip'
+import { staggerContainer, staggerItem, useMotionConfig } from '@/lib/motion'
+
+/**
+ * The pill look (issue #746, Signature "ChatBubble" board): a 44 px keycap on
+ * the surface fill with a 2 px ink edge and a 2 px ink "key" shadow, bold ink
+ * label. The model-supplied tone is not used for the fill here: every pill in a
+ * row reads as the same kind of key.
+ */
+const PILL_CLASS =
+  'min-w-0 max-w-full font-bold! shadow-[0_2px_0_var(--color-text)] active:translate-y-[1px] active:shadow-[0_1px_0_var(--color-text)] motion-reduce:active:translate-y-0'
+
+/** Reduced motion: the pills fade in together instead of springing up. */
+const FADE_ITEM = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { duration: 0.15 } } }
 
 /** Client-coded app actions. A closed union: model output can never name one.
  *  PR B/C extend it here, in one place. */
@@ -61,10 +75,18 @@ export default function PostMessageChips({
   onChipAction,
   align = 'bubble',
 }: PostMessageChipsProps) {
+  const { reduced } = useMotionConfig()
   if (chips.length === 0) return null
 
+  // Pills stagger in 40 ms apart once the reply has finished (this row only
+  // mounts under the last settled reply); under reduced motion they fade.
+  const item = reduced ? FADE_ITEM : staggerItem
+
   return (
-    <div
+    <motion.div
+      variants={staggerContainer}
+      initial="hidden"
+      animate="show"
       className={`flex flex-wrap gap-2 mt-2 max-w-full ${align === 'center' ? 'justify-center' : 'ml-11'}`}
     >
       {chips.map((chip) => {
@@ -74,34 +96,36 @@ export default function PostMessageChips({
           // hasn't wired a handler — omit it rather than render a no-op tap.
           if (!onChipAction || !chip.action) return null
           return (
-            <Chip
-              key={chip.label}
-              tone={chip.tone ?? 'muted'}
-              emoji={chip.emoji}
-              onClick={() => onChipAction(chip.action as ChipAction)}
-              ariaLabel={chip.label}
-              title={chip.label}
-              className="min-w-0 max-w-full"
-            >
-              {chip.label}
-            </Chip>
+            <motion.div key={chip.label} variants={item} className="min-w-0 max-w-full">
+              <Chip
+                tone="muted"
+                emoji={chip.emoji}
+                onClick={() => onChipAction(chip.action as ChipAction)}
+                ariaLabel={chip.label}
+                title={chip.label}
+                className={PILL_CLASS}
+              >
+                {chip.label}
+              </Chip>
+            </motion.div>
           )
         }
 
         return (
-          <Chip
-            key={chip.label}
-            tone={chip.tone ?? 'muted'}
-            emoji={chip.emoji}
-            onClick={() => onChipTap(chip)}
-            ariaLabel={chip.label}
-            title={chip.label}
-            className="min-w-0 max-w-full"
-          >
-            {chip.label}
-          </Chip>
+          <motion.div key={chip.label} variants={item} className="min-w-0 max-w-full">
+            <Chip
+              tone="muted"
+              emoji={chip.emoji}
+              onClick={() => onChipTap(chip)}
+              ariaLabel={chip.label}
+              title={chip.label}
+              className={PILL_CLASS}
+            >
+              {chip.label}
+            </Chip>
+          </motion.div>
         )
       })}
-    </div>
+    </motion.div>
   )
 }

@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 import MealNowCard from '@/components/meal/MealNowCard'
+import { dishProgress } from '@/components/meal/dish-progress'
 import MealNextUp from '@/components/meal/MealNextUp'
 import MealRunningStrip from '@/components/meal/MealRunningStrip'
 import MealCookFinished from '@/components/meal/MealCookFinished'
@@ -800,6 +801,7 @@ export default function MealCookPage() {
               onSkip={handleSkip}
               onStartEarly={handleStartEarly}
               onAskBubbles={handleAskBubbles}
+              progress={dishProgress(allStreamSteps, session.steps)}
             />
             {/* A waiting card already lists what's running, and has nothing
                 next to preview: rendering either here would repeat it (PR #661 review). */}
