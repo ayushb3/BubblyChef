@@ -21,7 +21,9 @@
  * below it: the counter's "+N" tag hangs under the counter, over the wall's top edge
  * (issue #839).
  */
+import { useRef } from 'react'
 import BubblesCounter from '@/components/ui/BubblesCounter'
+import { useClaimBubbleReaction } from '@/lib/bubble-reaction'
 import PageHeader from '@/components/layout/PageHeader'
 import NotificationBell from '@/components/layout/NotificationBell'
 import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
@@ -32,6 +34,11 @@ export interface KitchenHeaderProps {
 }
 
 export default function KitchenHeader({ eyebrow, balance }: KitchenHeaderProps) {
+  // While the counter is on screen, its "+N" tag is the award reaction, so the
+  // global `BubblePop` stays quiet (issue #843). Only while it is actually in view:
+  // the header scrolls away, and then `BubblePop` shows instead.
+  const counterRef = useRef<HTMLDivElement>(null)
+  useClaimBubbleReaction(counterRef, balance !== null)
   return (
     <PageHeader
       eyebrow={eyebrow}
@@ -39,7 +46,7 @@ export default function KitchenHeader({ eyebrow, balance }: KitchenHeaderProps) 
       title="Your kitchen"
       className="relative z-10"
     >
-      <div className="mr-1 flex min-w-[76px] justify-end" data-testid="kitchen-bubbles-balance-group">
+      <div ref={counterRef} className="mr-1 flex min-w-[76px] justify-end" data-testid="kitchen-bubbles-balance-group">
         {balance !== null && <BubblesCounter value={balance} testId="kitchen-bubbles-balance" />}
       </div>
       <NotificationBell />

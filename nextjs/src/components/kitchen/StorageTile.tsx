@@ -147,6 +147,8 @@ export interface RowResolve {
   cookHref?: string
   /** "Add to list" (issue #497): the cart key on the icon strip. Omitted: no key. */
   onAddToList?: () => void
+  /** "Used some" (issue #851): the amount used. Omitted: no such key. */
+  onUseSome?: (amount: number) => void
   onResolve: (outcome: ResolveOutcome) => void
 }
 
@@ -294,6 +296,9 @@ export function StorageRow({
           onResolve={resolve.onResolve}
           cookHref={resolve.cookHref}
           onAddToList={resolve.onAddToList}
+          onUseSome={resolve.onUseSome}
+          quantity={item.quantity}
+          unit={item.unit}
         />
       </li>
     )
