@@ -339,14 +339,24 @@ class MealOptionLLM(BaseModel):
     title: str = Field(description="Short, appetizing meal title")
     blurb: str | None = Field(default=None, description="One-sentence description")
     dishes: list[MealDishOutlineLLM] = Field(
-        default_factory=list, description="One main first, then 1-2 sides"
+        default_factory=list, description="One main first, then 0-2 sides fitted to the main"
     )
 
 
 class MealOptionsLLMResult(BaseModel):
-    """Envelope for the option-stage structured call -- 3 options requested."""
+    """Envelope for the option-stage structured call -- 3 options requested.
 
-    options: list[MealOptionLLM] = Field(default_factory=list)
+    The schema accepts 2-3 (issue #758): 3 is the target, 2 is allowed when the
+    pantry or constraints leave room for no more. It does not force exactly 3,
+    which would turn a thin-pantry answer into a validation-retry loop.
+    """
+
+    options: list[MealOptionLLM] = Field(
+        default_factory=list,
+        min_length=2,
+        max_length=3,
+        description="3 meal options; 2 only when a thin pantry or tight constraints allow no more",
+    )
     follow_ups: list[str] = Field(
         default_factory=list,
         description="2-4 short next asks in the user's voice, each under 60 characters, no emoji",

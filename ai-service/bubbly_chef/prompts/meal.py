@@ -20,16 +20,34 @@ rule that keeps predicted pills off the main). A prompt without a fixed main is
 byte-identical to before.
 """
 
-MEAL_OPTIONS_SYSTEM_PROMPT = """\
-You are a meal-planning assistant. Given the user's request, their available \
-ingredients, and their constraints, propose exactly 3 different meal options \
-for the same occasion.
+# Shared by both option-stage system prompts (issue #758). The model used to read
+# "every option must have at least one side" and return exactly one side every
+# time, and to stop at 2 options. This names the 3-option target, when 2 is
+# acceptable, and an example of each side count so 0, 1 and 2 are all live shapes.
+_MEAL_OPTION_SHAPE_RULES = """\
+Propose 3 meal options. Return only 2 when the request or the ingredients \
+genuinely leave room for no more (a thin pantry or tight constraints); never \
+return fewer than 2 and never more than 3.
 
-Each meal option is a MAIN dish plus 1 or 2 SIDE dishes -- pick one or two \
-sides depending on what suits the main (a heavy dish like lasagne usually \
-wants just one light side; a simple roast usually wants two). Every option \
-must have at least one side: a single dish on its own is never a complete \
-meal option, and no option may have more than one main.
+Each meal option is exactly one MAIN dish plus 0, 1 or 2 SIDE dishes, fitted \
+to the main. Never default to exactly one side: the number of sides is a \
+judgement about what that main needs, and the options in one set should \
+often have different numbers of sides. The three shapes:
+- no side: a main that is already a whole plate, e.g. a loaded ramen bowl or \
+a hearty beef stew.
+- one side: a main that wants one contrast, e.g. lasagne with a crisp green \
+salad.
+- two sides: a simple main that needs building out, e.g. a roast chicken \
+with roast potatoes and green beans.
+No option may have more than one main.\
+"""
+
+MEAL_OPTIONS_SYSTEM_PROMPT = f"""\
+You are a meal-planning assistant. Given the user's request, their available \
+ingredients, and their constraints, propose meal options for the same \
+occasion.
+
+{_MEAL_OPTION_SHAPE_RULES}
 
 For each dish, give a name (2-5 words) and list 3-6 KEY ingredients -- the \
 ones that matter for whether the user has what they need, not the full \
@@ -37,7 +55,7 @@ ingredient list. Estimate est_total_minutes and est_hands_on_minutes for \
 each dish, in whole minutes.
 
 Rules:
-- The 3 options must be genuinely different from one another -- different \
+- The options must be genuinely different from one another -- different \
 mains, not the same dish with a swapped side.
 - If "Must use" ingredients are listed, every option must actually use them \
 -- this overrides every other preference.
@@ -57,25 +75,23 @@ what you suggest.
 # Used when the user has asked us not to look at their pantry (issue #287).
 # Mirrors BRAINSTORM_SYSTEM_PROMPT_NO_PANTRY's approach for single-dish
 # brainstorming: the pantry-dependent rules are dropped rather than softened.
-MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY = """\
-You are a meal-planning assistant. Propose exactly 3 different meal options \
-for the same occasion, from the user's request alone.
+MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY = f"""\
+You are a meal-planning assistant. Propose meal options for the same \
+occasion, from the user's request alone.
 
 The user has asked you NOT to use their pantry. Do not mention their \
 pantry, their stock, or anything expiring, and do not steer the \
 suggestions toward ingredients you think they might have. Work only from \
 what they asked for.
 
-Each meal option is a MAIN dish plus 1 or 2 SIDE dishes -- pick one or two \
-sides depending on what suits the main. Every option must have at least \
-one side, and no option may have more than one main.
+{_MEAL_OPTION_SHAPE_RULES}
 
 For each dish, give a name (2-5 words) and list 3-6 KEY ingredients. \
 Estimate est_total_minutes and est_hands_on_minutes for each dish, in \
 whole minutes.
 
 Rules:
-- The 3 options must be genuinely different from one another.
+- The options must be genuinely different from one another.
 - If "Must use" ingredients are listed, every option must actually use them.
 - Match the cuisine, mood, and dietary restrictions if specified.
 - If kitchen limits are listed (e.g. "one pan"), keep the dishes simple \
@@ -250,7 +266,19 @@ MEAL_OPTIONS_FIXED_MAIN_BLOCK = (
     "give each option 1-2 sides that complement this main (don't repeat its main "
     "ingredient or its starch), and make each option's sides genuinely different "
     "from the other options' sides. This overrides the rule about different "
-    "mains. The constraints above apply to the sides; never change the main."
+    "mains and the no-side shape: here every option has sides, never none. The constraints above apply to the sides; never change the main."
+)
+
+# Appended to the fixed-main block on a follow-up turn, when "Already suggested"
+# lists earlier sides (issue #762). On production a "different sides" tap
+# reused earlier sides in every option despite the soft "different from all of
+# them" line, so this is stated as a hard rule; the option stage also drops any
+# repeated side in code, so this is the first of two defences.
+MEAL_OPTIONS_FIXED_MAIN_NO_REPEAT_RULE = (
+    "\nHard rule for this turn: no side from the \"Just shown\" or \"Earlier\" "
+    "lists above may appear in any option, alone or beside a new side, however "
+    "it is worded. Every side you give must be a dish not yet suggested in this "
+    "conversation."
 )
 
 # Appended right after MEAL_OPTIONS_FOLLOW_UPS_RULES (and before the no-pantry

@@ -54,6 +54,31 @@ describe('MealOptionCards', () => {
     expect(cards[0]).toHaveTextContent('Buttered orzo')
   })
 
+  it('copes with three options and a different number of sides on each (issue #758)', () => {
+    const [first, second] = OPTIONS
+    const mainOnly: MealOption = {
+      ...second,
+      option_id: 'opt_3',
+      title: 'Loaded ramen bowl',
+      dishes: [second.dishes[0]],
+    }
+    const twoSides: MealOption = {
+      ...first,
+      option_id: 'opt_4',
+      title: 'Roast chicken night',
+      dishes: [...first.dishes, { ...first.dishes[1], name: 'Green beans' }],
+    }
+    render(<MealOptionCards options={[mainOnly, first, twoSides]} onSelect={jest.fn()} />)
+    const cards = screen.getAllByRole('listitem', { name: /^Pick /i })
+    expect(cards).toHaveLength(3)
+    // Only the main-only card says "no side".
+    expect(cards[0]).toHaveTextContent('no side')
+    expect(cards[1]).not.toHaveTextContent('no side')
+    expect(cards[2]).not.toHaveTextContent('no side')
+    expect(cards[2]).toHaveTextContent('Buttered orzo')
+    expect(cards[2]).toHaveTextContent('Green beans')
+  })
+
   it('hides the coverage chip and rescue flag when the user opted out of the pantry (coverage null)', () => {
     const optedOut: MealOption[] = [{ ...OPTIONS[0], coverage: null, rescues: [] }]
     render(<MealOptionCards options={optedOut} onSelect={jest.fn()} />)

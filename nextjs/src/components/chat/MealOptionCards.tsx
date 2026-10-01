@@ -94,6 +94,13 @@ export default function MealOptionCards({
                   <span>{dish.name}</span>
                 </li>
               ))}
+              {/* A main can be a whole plate, or have lost a repeated side (#758, #762). */}
+              {!option.dishes.some((dish) => dish.role === 'side') && (
+                <li className="flex items-baseline gap-2 text-xs text-[var(--color-muted)]">
+                  <span className="w-9 flex-shrink-0" aria-hidden />
+                  <span>no side</span>
+                </li>
+              )}
             </ul>
 
             <div className="flex flex-wrap gap-1.5 mt-1">
