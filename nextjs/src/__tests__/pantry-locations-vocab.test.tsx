@@ -10,12 +10,10 @@
  * offers or edits a location any more.
  *
  * Four `it(...)` names here were rewritten to say what each test now asserts.
- * That trips `scripts/agent-gates/test-count-guard.sh`, which matches test
- * names textually and reads a rename as a deletion — so this PR carries the
- * `test-removal-approved` label. Keeping the old names would have left a test
- * called "renders one toggle per shared location" asserting that no toggle
- * exists: a passing test that lies to the next person who greps for the
- * behaviour, which is worse than tripping the guard.
+ * A rename reads as a deletion to anyone diffing the names, but keeping the old
+ * names would have left a test called "renders one toggle per shared location"
+ * asserting that no toggle exists: a passing test that lies to the next person
+ * who greps for the behaviour.
  */
 import fs from 'fs'
 import path from 'path'

@@ -746,8 +746,8 @@ async def test_pending_proposal_accumulates_and_dedupes_across_turns():
 
 @pytest.mark.asyncio
 async def test_pending_proposal_cleared_once_review_no_longer_required():
-    """Despite the name (kept as-is so the test-count guard sees this as a
-    fixed test, not a removed one — see #600 review): a clean turn (nothing
+    """Despite the name (kept as-is so a rename is not read as a removed
+    test — see #600 review): a clean turn (nothing
     left to review) must switch the session back to DEFAULT mode but keep
     the turn's items as short-lived continuity (`continuity_item_names`,
     not `item_names` — see the orchestrator re-review on PR #600, inline

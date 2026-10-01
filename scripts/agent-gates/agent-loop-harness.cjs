@@ -12,7 +12,9 @@
 const fs = require('fs')
 const path = require('path')
 
-const SCRIPT = path.join(__dirname, '..', '..', '.claude', 'workflows', 'agent-loop.js')
+// AGENT_LOOP_SCRIPT points the harness at another copy of the script (e.g. main's, to
+// confirm a new check is red there); by default it tests the checked-in workflow.
+const SCRIPT = process.env.AGENT_LOOP_SCRIPT || path.join(__dirname, '..', '..', '.claude', 'workflows', 'agent-loop.js')
 const body = fs.readFileSync(SCRIPT, 'utf8').replace('export const meta', 'const meta')
 
 // Build the script as a function of its runtime hooks, the way the Workflow runtime does.
@@ -38,7 +40,7 @@ function harness(respond) {
       r = { ...r, reviewedSha: m ? m[1] : '' }
     }
     if (r && typeof r === 'object' && opts.label.startsWith('respond-fix')) {
-      r = { ...r, pushedSha: r.pushedSha === undefined ? `sha-fix-${++fixN}` : r.pushedSha, protectedPaths: r.protectedPaths || [] }
+      r = { ...r, pushedSha: r.pushedSha === undefined ? `sha-fix-${++fixN}` : r.pushedSha, ruleChangePaths: r.ruleChangePaths || [] }
     }
     if (opts.label === 'finish' && (r === 'none' || r === undefined)) r = { returnedToOriginal: true, ranMergeCommand: false }
     return r
@@ -63,11 +65,11 @@ const HAPPY = (label, extra = {}) => {
   if (label === 'capability') return extra.capability || CAPABILITY_OK
   if (label === 'preflight') return extra.facts || FACTS
   if (label === 'setup') return extra.setup || SETUP_OK
-  if (label === 'plan') return { plan: 'p', filesToChange: ['a.ts'], protectedPaths: [], userVisible: true, questions: [] }
+  if (label === 'plan') return { plan: 'p', filesToChange: ['a.ts'], userVisible: true, questions: [] }
   if (label.startsWith('implement')) return { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts'] }
   if (label.startsWith('verify')) return { verified: true, applicable: true, commitVerified: 'abc', evidence: 'e', screenshots: [], problems: '', couldNotVerify: '' }
   if (label.startsWith('review')) return { verdict: 'mergeable', findings: [] }
-  if (label === 'ship') return { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', protectedPaths: extra.protectedPaths || [], wouldAutoMerge: true, lessonsProposed: [] }
+  if (label === 'ship') return { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', ruleChangePaths: extra.ruleChangePaths || [], wouldAutoMerge: true, lessonsProposed: [] }
   if (label.startsWith('gh-review')) return { reviewRan: true, verdict: 'looks mergeable', findings: [], note: '' }
   return 'none'
 }
@@ -106,11 +108,10 @@ async function main() {
   }
 
   // ── The bot-identity gate: nothing at all runs in an environment that would
-  // write as the wrong account. This is the loop's central safety property —
-  // GitHub skips code-owner review when the PR author is the only code owner, so
-  // a run that falls back to Ayush's identity bypasses the protected-path gate
-  // while looking clean. It is checked before the issue is even read, so these
-  // stops must fire with ONLY the probe having run.
+  // write as the wrong account. This is the loop's central safety property — a run
+  // that falls back to Ayush's identity opens PRs that look like his and drops out of
+  // the agent-loop accounting (daily cap, verdict gate). It is checked before the issue
+  // is even read, so these stops must fire with ONLY the probe having run.
   const envStops = [
     ['no gh binary', { ghPresent: false, botLogin: '', probe: 'command not found' }, /gh CLI is not installed/],
     ['identity resolves to a human', { ghPresent: true, botLogin: 'ayushb3', probe: 'ayushb3' }, /attributed to "ayushb3", not bubblychef-bot/],
@@ -233,8 +234,8 @@ async function main() {
     // escalation to Ayush
     {
       const h = harness(label => {
-        if (label === 'plan') return { plan: 'p', filesToChange: [], protectedPaths: [], userVisible: false, questions: [{ question: 'q', options: ['a', 'b'], implementerTake: 'a' }] }
-        if (label.startsWith('decide')) return { decision: 'd', reasoning: 'r', escalate: true, escalateReason: 'protected path' }
+        if (label === 'plan') return { plan: 'p', filesToChange: [], userVisible: false, questions: [{ question: 'q', options: ['a', 'b'], implementerTake: 'a' }] }
+        if (label.startsWith('decide')) return { decision: 'd', reasoning: 'r', rejectedAlternative: 'b', escalate: true, escalateReason: 'changes v1 scope' }
         return HAPPY(label)
       })
       const r = await h.run({ issue: 405 })
@@ -344,11 +345,29 @@ async function main() {
       `${r.githubReview} autoMerge ${r.autoMergeRequested}`)
   }
   {
-    // a Respond fix touches a protected path, then the review passes
-    const h = harness(ghSeq(['needs changes', 'looks mergeable'], { ...FIXED, protectedPaths: ['.github/CODEOWNERS'] }))
-    const r = await h.run({ issue: 405, shadow: false })
-    check('respond: a fix that touches a protected path blocks auto-merge', r.autoMergeRequested === false && r.protectedPaths.includes('.github/CODEOWNERS'),
-      `autoMerge ${r.autoMergeRequested} protected ${r.protectedPaths}`)
+    // a Respond fix touches CI / agent config, then the review passes: there is no protected
+    // tier any more (WORKFLOW.md section 6), so it is reported for visibility, not held
+    const h = harness(ghSeq(['needs changes', 'looks mergeable'], { ...FIXED, ruleChangePaths: ['.github/workflows/ci.yml'] }))
+    const r = await h.run({ issue: 405 })
+    check('respond: a fix that touches CI/agent config is reported but does not block auto-merge', r.autoMergeRequested === true && r.ruleChangePaths.includes('.github/workflows/ci.yml'),
+      `autoMerge ${r.autoMergeRequested} ruleChangePaths ${r.ruleChangePaths}`)
+  }
+  {
+    // the reviewer's verdict is read by the SAME parser the required "Claude review verdict"
+    // check runs (scripts/merge/parse-verdict.sh -> review-verdict.cjs), not by the agent's eye
+    const h = harness(ghSeq(['looks mergeable'], FIXED))
+    await h.run({ issue: 405 })
+    const p = h.prompts['gh-review-1'] || ''
+    check('respond: the review verdict is read through scripts/merge/parse-verdict.sh', /bash scripts\/merge\/parse-verdict\.sh/.test(p) && /unknown/.test(p) && /never approval/.test(p), 'gh-review prompt')
+  }
+  {
+    // a review the shared parser cannot read (it prints unknown -> verdict "none" with reviewRan true)
+    // is a missing review, never approval, and is not "fixed" against
+    const h = harness(label => label.startsWith('gh-review')
+      ? { reviewRan: true, verdict: 'none', findings: [{ severity: 'important', file: 'a', problem: 'p', why: 'w' }], note: '' } : HAPPY(label))
+    const r = await h.run({ issue: 405 })
+    check('respond: a verdict the shared parser cannot read is no-review, never approval', r.githubReview === 'no-review' && r.autoMergeRequested === false && count(h, 'respond-fix') === 0,
+      `${r.githubReview} autoMerge ${r.autoMergeRequested} fixes ${count(h, 'respond-fix')}`)
   }
   {
     // the finish agent fails to return the checkout
@@ -358,7 +377,7 @@ async function main() {
   }
   {
     const h = harness(label => label === 'finish' ? { returnedToOriginal: true, ranMergeCommand: true } : HAPPY(label))
-    const r = await h.run({ issue: 405 })
+    const r = await h.run({ issue: 405, shadow: true })
     check('finish: a merge command run in shadow mode is reported', r.mergeRuleBroken === true, `mergeRuleBroken ${r.mergeRuleBroken}`)
   }
 
@@ -376,19 +395,19 @@ async function main() {
   }
   {
     const h = harness(label => label === 'finish' ? { returnedToOriginal: true, ranMergeCommand: true } : HAPPY(label))
-    await h.run({ issue: 405 })
+    await h.run({ issue: 405, shadow: true })
     check('finish: a forbidden merge command is undone, not just logged', h.calls.includes('undo-auto-merge') && /--disable-auto/.test(h.prompts['undo-auto-merge'] || ''), `calls ${h.calls.join()}`)
   }
 
   // ── Auto-merge is requested only when EVERY condition holds ──
   {
     const cases = [
-      ['shadow (default), mergeable', {}, ['looks mergeable'], {}, false],
-      ['not shadow, mergeable, no protected paths', { shadow: false }, ['looks mergeable'], {}, true],
-      ['not shadow, mergeable, protected path', { shadow: false }, ['looks mergeable'], { protectedPaths: ['.github/x'] }, false],
-      ['not shadow, unresolved review', { shadow: false }, ['needs changes'], {}, false],
-      ['not shadow, review never ran', { shadow: false }, ['none'], {}, false],
-      ['not shadow, needs a human', { shadow: false }, ['needs a human'], {}, false],
+      ['default (not shadow), mergeable', {}, ['looks mergeable'], {}, true],
+      ['shadow: true (opt-in), mergeable', { shadow: true }, ['looks mergeable'], {}, false],
+      ['mergeable, change touches CI / agent config (no protected tier)', {}, ['looks mergeable'], { ruleChangePaths: ['.claude/workflows/agent-loop.js'] }, true],
+      ['unresolved review', {}, ['needs changes'], {}, false],
+      ['review never ran', {}, ['none'], {}, false],
+      ['needs a human', {}, ['needs a human'], {}, false],
     ]
     for (const [name, args, verdicts, extra, expect] of cases) {
       const h = harness(ghSeq(verdicts, FIXED, extra))
@@ -396,6 +415,31 @@ async function main() {
       const asked = /gh pr merge \d+ --repo \S+ --auto/.test(h.prompts.finish || '')
       check(`auto-merge ${expect ? 'requested' : 'NOT requested'}: ${name}`, r.autoMergeRequested === expect && asked === expect,
         `autoMergeRequested ${r.autoMergeRequested}, prompt asks ${asked}`)
+    }
+    // WORKFLOW.md section 6, third condition: anything a user could see needs a verify that PASSED.
+    // "applicable: false" lets a run reach Ship, but it is not a passing verify of a visible change.
+    const NOT_APPLICABLE = label => label.startsWith('verify')
+      ? { verified: false, applicable: false, commitVerified: '', evidence: 'n/a', screenshots: [], problems: '', couldNotVerify: 'x' } : HAPPY(label)
+    for (const [name, userVisible, expect] of [['user-visible, verify not applicable', true, false], ['not user-visible, verify not applicable', false, true]]) {
+      const h = harness(label => label === 'plan' ? { ...HAPPY('plan'), userVisible } : NOT_APPLICABLE(label))
+      const r = await h.run({ issue: 405 })
+      check(`auto-merge ${expect ? 'requested' : 'NOT requested'}: ${name}`, r.autoMergeRequested === expect, `autoMergeRequested ${r.autoMergeRequested}`)
+    }
+    {
+      // an eligible merge brings a behind branch up to date first, and is a real merge commit
+      const h = harness(label => HAPPY(label))
+      await h.run({ issue: 405 })
+      const f = h.prompts.finish || ''
+      check('finish: updates a BEHIND branch with main, then requests a real-merge-commit auto-merge, never --admin',
+        /update-branch/.test(f) && /--auto --merge/.test(f) && /never squash or rebase, never --admin/.test(f), 'finish prompt')
+    }
+    {
+      // only Finish may merge: every other bot prompt still forbids it
+      const h = harness(label => HAPPY(label))
+      await h.run({ issue: 405 })
+      const forbids = Object.entries(h.prompts).filter(([k, v]) => /ACTING AS THE BOT/.test(v) && k !== 'finish' && !/Never merge a PR and never run `gh pr merge` in any form/.test(v)).map(([k]) => k)
+      check('every bot prompt except finish forbids merging', forbids.length === 0, `missing the rule: ${forbids.join(', ')}`)
+      check('the finish prompt does not tell the agent never to run gh pr merge (it must request auto-merge)', !/never run `gh pr merge` in any form/.test(h.prompts.finish || ''), 'finish prompt')
     }
   }
 
@@ -418,7 +462,7 @@ async function main() {
     check('non-dev stages use the lean loop-runner', plumbingNotLean.length === 0, `other types: ${plumbingNotLean.join(', ')}`)
   }
 
-  // ── Behaviour changes beyond the issue must reach Ayush (found on issue #406 / PR #468) ──
+  // ── Behaviour changes beyond the issue are surfaced, decided and logged (found on issue #406 / PR #468) ──
   {
     const h = harness(label => HAPPY(label))
     await h.run({ issue: 405, dryRun: true })
@@ -426,14 +470,28 @@ async function main() {
       /ALWAYS include as a question any change a user would notice beyond what the issue/.test(h.prompts.plan || ''), 'plan prompt')
   }
   {
-    // such a question, escalated by the decision agent, stops the run for Ayush
+    // such a question is a reversible product call: the decision agent settles it, the run goes
+    // on, and the PR body carries the call with the alternative it rejected (WORKFLOW.md section 6)
     const h = harness(label => {
-      if (label === 'plan') return { plan: 'p', filesToChange: [], protectedPaths: [], userVisible: true, questions: [{ question: 'should we also stop auto-adding medium-confidence items?', options: ['yes', 'no'], implementerTake: 'yes' }] }
-      if (label.startsWith('decide')) return { decision: 'yes', reasoning: 'r', escalate: true, escalateReason: 'product behaviour beyond the issue' }
+      if (label === 'plan') return { plan: 'p', filesToChange: [], userVisible: true, questions: [{ question: 'should we also stop auto-adding medium-confidence items?', options: ['yes', 'no'], implementerTake: 'yes' }] }
+      if (label.startsWith('decide')) return { decision: 'yes', reasoning: 'r', rejectedAlternative: 'leave them auto-added', escalate: false, escalateReason: '' }
       return HAPPY(label)
     })
     const r = await h.run({ issue: 406 })
-    check('a behaviour-change question escalated by Decide stops as needs-decision, before any code', r.status === 'needs-decision' && !h.calls.some(c => c.startsWith('implement')),
+    check('a behaviour-change question that Decide settles does not stop the run', r.status === 'pr-opened' && h.calls.some(c => c.startsWith('implement')), `${r.status} calls ${h.calls.join()}`)
+    check('the PR body logs the decision with the alternative it rejected', /rejected: leave them auto-added/.test(h.prompts.ship || ''), 'ship prompt')
+    const dp = h.prompts['decide-1'] || ''
+    check('Decide escalates only a change to v1 scope or a cost', /changes v1 scope/.test(dp) && /costs money/.test(dp) && /rejectedAlternative/.test(dp), 'decide prompt')
+  }
+  {
+    // ...and a decision agent that does escalate (v1 scope, or spend) still stops the run for Ayush
+    const h = harness(label => {
+      if (label === 'plan') return { plan: 'p', filesToChange: [], userVisible: true, questions: [{ question: 'move to a paid tier?', options: ['yes', 'no'], implementerTake: 'yes' }] }
+      if (label.startsWith('decide')) return { decision: 'yes', reasoning: 'r', rejectedAlternative: 'no', escalate: true, escalateReason: 'costs money' }
+      return HAPPY(label)
+    })
+    const r = await h.run({ issue: 406 })
+    check('a question escalated by Decide (spend) stops as needs-decision, before any code', r.status === 'needs-decision' && !h.calls.some(c => c.startsWith('implement')),
       `${r.status} calls ${h.calls.join()}`)
   }
 
@@ -470,11 +528,11 @@ async function main() {
   }
 
   // ── Size tiers: decided in code, can only go up, never lower the bar ──
-  // A small plan: few lines, few files, no protected path. The implement/ship mocks
+  // A small plan: few lines, few files. The implement/ship mocks
   // report a real small diff so the tier survives the re-checks unless a test says otherwise.
-  const SMALL_PLAN = { plan: 'p', filesToChange: ['a.ts', 'a.test.ts'], protectedPaths: [], expectedChangedLines: 40, userVisible: true, questions: [] }
-  const SMALL_IMPL = { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts', 'a.test.ts'], linesChanged: 40, protectedPaths: [] }
-  const SMALL_SHIP = { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', protectedPaths: [], linesChanged: 40, filesChanged: 2, wouldAutoMerge: true, lessonsProposed: [] }
+  const SMALL_PLAN = { plan: 'p', filesToChange: ['a.ts', 'a.test.ts'], expectedChangedLines: 40, userVisible: true, questions: [] }
+  const SMALL_IMPL = { gatesPassed: true, gateOutput: 'ok', summary: 'did it', filesChanged: ['a.ts', 'a.test.ts'], linesChanged: 40 }
+  const SMALL_SHIP = { prUrl: 'u', prNumber: 1, headSha: 'sha-ship', ruleChangePaths: [], linesChanged: 40, filesChanged: 2, wouldAutoMerge: true, lessonsProposed: [] }
   // By default main requires the verdict gate, so small can skip the wait; tests that
   // are about the gate being absent override requiredChecks.
   const GATED = { requiredChecks: ['Agent loop limits hold', 'Claude review verdict'] }
@@ -492,7 +550,7 @@ async function main() {
   const BUG = { kind: 'bug' }
   {
     const h = harness(tiered())
-    const r = await h.run({ issue: 405, shadow: false })
+    const r = await h.run({ issue: 405 })
     check('tier: a small plan with a small diff runs as small', r.tier === 'small', `tier ${r.tier}; ${r.tierLog}`)
     check('tier small: no GitHub-review wait (Respond skipped)', count(h, 'gh-review') === 0 && count(h, 'respond-fix') === 0 && r.githubReview === 'gated by required check (small tier)',
       `gh-review ${count(h, 'gh-review')} outcome ${r.githubReview}`)
@@ -505,7 +563,7 @@ async function main() {
   }
   {
     const h = harness(tiered())
-    const r = await h.run({ issue: 405 })
+    const r = await h.run({ issue: 405, shadow: true })
     check('tier small in shadow mode: still never requests auto-merge', r.tier === 'small' && r.autoMergeRequested === false && !/--auto/.test(h.prompts.finish || ''), `autoMerge ${r.autoMergeRequested}`)
   }
   {
@@ -513,12 +571,12 @@ async function main() {
     // small must wait for and read the GitHub review like any other tier.
     for (const [name, requiredChecks] of [['absent', ['Agent loop limits hold']], ['unreadable', []], ['near-miss name', ['Claude review verdicts']]]) {
       const h = harness(tiered({ facts: { requiredChecks } }))
-      const r = await h.run({ issue: 405, shadow: false })
+      const r = await h.run({ issue: 405 })
       check(`tier small, verdict gate ${name}: waits for the GitHub review (Respond runs)`, r.tier === 'small' && count(h, 'gh-review') >= 1, `gh-review ${count(h, 'gh-review')}`)
       check(`tier small, verdict gate ${name}: auto-merge only on Respond's own "looks mergeable"`, r.githubReview === 'looks mergeable' && r.autoMergeRequested === true, `${r.githubReview} ${r.autoMergeRequested}`)
     }
     const h = harness(label => label.startsWith('gh-review') ? { reviewRan: true, verdict: 'needs a human', findings: [], note: '' } : tiered({ facts: { requiredChecks: [] } })(label))
-    const r = await h.run({ issue: 405, shadow: false })
+    const r = await h.run({ issue: 405 })
     check('tier small, no verdict gate, reviewer says "needs a human": no auto-merge', r.autoMergeRequested === false, `autoMerge ${r.autoMergeRequested}`)
   }
   {
@@ -556,10 +614,10 @@ async function main() {
     }
   }
   {
-    // protected is never small, however tiny the change
-    const h = harness(tiered({ plan: { protectedPaths: ['.github/CODEOWNERS'], expectedChangedLines: 1, filesToChange: ['.github/CODEOWNERS'] } }))
-    const r = await h.run({ issue: 405 })
-    check('tier: a protected path is never small, even at 1 line', r.tier === 'protected' && count(h, 'gh-review') >= 1, `tier ${r.tier} gh-review ${count(h, 'gh-review')}`)
+    // there is no protected tier: a one-line change to CI or agent config is sized like any other
+    const h = harness(tiered({ plan: { expectedChangedLines: 1, filesToChange: ['.github/workflows/ci.yml'] } }))
+    const r = await h.run({ issue: 405, dryRun: true })
+    check('tier: a path under .github/ is no longer a special tier (a 1-line change is small)', r.tier === 'small', `tier ${r.tier}; ${r.tierLog}`)
   }
   {
     const cases = [
@@ -592,14 +650,11 @@ async function main() {
     check('tier bumps up at Ship when review fixes grew the diff', r.tier === 'standard' && count(h, 'gh-review') >= 1, `tier ${r.tier}; ${r.tierLog}`)
   }
   {
-    const h = harness(tiered({ impl: { protectedPaths: ['supabase/migrations/x.sql'] }, ship: { protectedPaths: ['supabase/migrations/x.sql'] } }))
+    // visibility, not a gate: the PR body flags a change to CI / agent config, the tier is unchanged
+    const h = harness(tiered({ ship: { ruleChangePaths: ['.claude/settings.json'] } }))
     const r = await h.run({ issue: 405 })
-    check('tier bumps to protected when Implement touches a protected path', r.tier === 'protected' && count(h, 'gh-review') >= 1, `tier ${r.tier}`)
-  }
-  {
-    const h = harness(tiered({ ship: { protectedPaths: ['.claude/settings.json'] } }))
-    const r = await h.run({ issue: 405 })
-    check('tier bumps to protected when the shipped diff touches a protected path', r.tier === 'protected' && count(h, 'gh-review') >= 1, `tier ${r.tier}`)
+    check('a shipped diff that touches agent config is reported, and stays small', r.tier === 'small' && r.ruleChangePaths.includes('.claude/settings.json'), `tier ${r.tier} ${r.ruleChangePaths}`)
+    check('the PR body names a CI / agent-config change at the top', /Changes CI, gates or agent config/.test(h.prompts.ship || ''), 'ship prompt')
   }
   {
     // never DOWN: a standard plan whose diff came out tiny stays standard
@@ -629,12 +684,37 @@ async function main() {
     check('tier: an unreported diff size after Implement counts as standard', r.tier === 'standard', `tier ${r.tier}`)
   }
 
-  // ── The loop never merges in shadow mode ──
+  // ── Shadow mode is an opt-in; the default follows the merge policy ──
   {
     const h = harness(label => HAPPY(label))
-    await h.run({ issue: 405 })
+    await h.run({ issue: 405, shadow: true })
     const ship = h.prompts.ship || ''
-    check('shadow mode (default) tells Ship not to enable auto-merge', /Shadow mode: do NOT enable auto-merge/.test(ship), 'ship prompt')
+    check('shadow: true tells Ship not to enable auto-merge', /Shadow mode: do NOT enable auto-merge/.test(ship), 'ship prompt')
+  }
+  {
+    const h = harness(label => HAPPY(label))
+    const r = await h.run({ issue: 405 })
+    check('by default the run is not shadow: Ship leaves auto-merge to Finish, which requests it', r.shadow === false && !/Shadow mode/.test(h.prompts.ship || '') && r.autoMergeRequested === true, `shadow ${r.shadow} autoMerge ${r.autoMergeRequested}`)
+  }
+
+  // ── The retired mechanisms are gone from every prompt the loop emits (issue #645) ──
+  // CODEOWNERS and the protected-path tiers are deleted, and no CI job re-runs a bug's test
+  // against main any more. A prompt that still names them would send an agent after something
+  // that does not exist, so assert it across a full run, a bug run, a blocked run, an escalation
+  // and a Respond round.
+  {
+    const seen = {}
+    const BUG_RUN = label => (label === 'preflight' ? { ...FACTS, kind: 'bug' } : HAPPY(label))
+    const runs = [
+      harness(label => HAPPY(label)),
+      harness(BUG_RUN),
+      harness(label => (label === 'preflight' ? { ...FACTS, kind: 'bug' } : label.startsWith('reproduce') ? { failedAsExpected: true, testFiles: ['t'], failureOutput: 'f', beforeScreenshots: [], notes: '' } : label === 'plan' ? { ...HAPPY('plan'), expectedChangedLines: 900 } : HAPPY(label))),
+      harness(ghSeq(['needs changes', 'looks mergeable'], FIXED)),
+      harness(label => (label.startsWith('implement') ? { gatesPassed: false, gateOutput: 'x', summary: 's', filesChanged: [], linesChanged: 1 } : HAPPY(label))),
+    ]
+    for (const h of runs) { await h.run({ issue: 405 }); Object.assign(seen, h.prompts) }
+    const stale = Object.entries(seen).filter(([, v]) => /CODEOWNERS|fail-to-pass|protected path/i.test(v)).map(([k]) => k)
+    check(`no prompt mentions CODEOWNERS, fail-to-pass or protected paths (checked ${Object.keys(seen).length} prompts)`, stale.length === 0, `still in: ${stale.join(', ')}`)
   }
 
   console.log(failures ? `\n${failures} failure(s)` : '\nall agent-loop control-flow checks passed')

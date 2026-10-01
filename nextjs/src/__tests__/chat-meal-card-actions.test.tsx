@@ -141,7 +141,7 @@ describe('compact meal card actions (issue #650)', () => {
     createMeal.mockResolvedValue({ id: 'meal-1', is_draft: true })
     renderChat()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open meal' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Open meal/ }))
 
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/meals/meal-1'))
     expect(createMeal).toHaveBeenCalledTimes(1)
@@ -156,7 +156,7 @@ describe('compact meal card actions (issue #650)', () => {
     createMeal.mockReturnValue(promise)
     renderChat()
 
-    const button = await screen.findByRole('button', { name: 'Open meal' })
+    const button = await screen.findByRole('button', { name: /^Open meal/ })
     fireEvent.click(button)
     // The button disables itself once tapped (openState leaves 'idle'), so a
     // second click before the POST resolves cannot re-fire the handler.
@@ -186,7 +186,7 @@ describe('compact meal card actions (issue #650)', () => {
     updateMeal.mockResolvedValue({ id: 'meal-3', is_draft: false })
     renderChat()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open meal' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Open meal/ }))
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/meals/meal-3'))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save meal' }))

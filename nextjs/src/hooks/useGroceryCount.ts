@@ -24,7 +24,8 @@ import { fetchPantryItems } from '@/lib/api/pantry'
 import { countToBuy, regenerateGroceryList } from '@/lib/grocery'
 import { parseGroceryLines, readGroceryRaw, subscribeGrocery } from '@/lib/grocery-store'
 
-async function fetchUserId(): Promise<string | null> {
+/** Who the grocery list belongs to (shared with the meal screen's "N to buy" line, issue #745). */
+export async function fetchUserId(): Promise<string | null> {
   const {
     data: { user },
   } = await createClient().auth.getUser()
