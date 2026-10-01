@@ -321,6 +321,21 @@ export interface ChatMessage {
    * on the real request rather than on the words "Tweak this recipe".
    */
   confirmSource?: string
+  /**
+   * Set on an assistant reply whose request never completed (network drop,
+   * non-2xx, stream error): what was sent, so Retry can resend it verbatim and
+   * Dismiss can hand the text back to the input (#847). Client-only, never
+   * persisted.
+   */
+  sendFailure?: SendFailure
+}
+
+/** The exact arguments of a send that failed, kept so a Retry is identical. */
+export interface SendFailure {
+  text: string
+  context?: Record<string, unknown> | null
+  forcedIntent?: 'recipe_card' | 'recipe_brainstorm' | null
+  forcedIntentSource?: string | null
 }
 
 export interface ChatRequest {
