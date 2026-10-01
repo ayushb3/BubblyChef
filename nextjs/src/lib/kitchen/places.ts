@@ -130,6 +130,28 @@ export interface StoredItem extends PlaceItem {
   unit: string
 }
 
+/**
+ * The home address that opens the storage sheet (issue #750: the Pantry tab's
+ * replacement). `/?place=fridge&view=list&expiry=expiring,expired` is the sheet
+ * on the Fridge tab in List view with the expiry filter on; the page redirects
+ * from the old `/pantry` addresses here, and in-app links into the pantry use it.
+ */
+export function storageSheetHref({
+  place = 'fridge',
+  view = 'list',
+  expiry,
+}: {
+  place?: PlaceKey
+  view?: 'scene' | 'list'
+  /** Expiry facets to start with: `expiring`, `expired`. */
+  expiry?: readonly ('expiring' | 'expired')[]
+} = {}): string {
+  const params = new URLSearchParams({ place, view })
+  if (expiry && expiry.length > 0) params.set('expiry', expiry.join(','))
+  // `,` stays readable in the address bar.
+  return `/?${params.toString().replace(/%2C/g, ',')}`
+}
+
 /** The stored `pantry_items.location` a place saves: what "Add to the Freezer" writes. */
 export function placeLocation(key: PlaceKey): PlaceDef['location'] {
   return placeDef(key).location

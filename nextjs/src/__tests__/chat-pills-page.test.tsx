@@ -160,13 +160,13 @@ describe('starter pills on the empty chat (issue #651)', () => {
     expect(screen.getByRole('button', { name: 'Scan a receipt' })).toBeInTheDocument()
   })
 
-  it('tapping the "Scan a receipt" action pill pushes /pantry?add=scan', async () => {
+  it('tapping the "Scan a receipt" action pill opens the add sheet on its scan tab (/?add=scan)', async () => {
     global.fetch = makeFetchMock(() => Promise.resolve(jsonResponse({ pantry_count: 0 })))
     renderChat()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Scan a receipt' }))
 
-    expect(routerPush).toHaveBeenCalledWith('/pantry?add=scan')
+    expect(routerPush).toHaveBeenCalledWith('/?add=scan')
   })
 
   it('tapping a send pill calls sendMessage with the chip message', async () => {

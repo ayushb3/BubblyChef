@@ -74,6 +74,8 @@ function Harness({
       onClose={onClose}
       onEdit={onEdit}
       onAdd={onAdd}
+      onMove={jest.fn()}
+      onResolve={jest.fn()}
       onRetry={jest.fn()}
     />
   )
@@ -195,19 +197,23 @@ describe('Scene | List', () => {
     expect(screen.getByRole('dialog', { name: 'Fridge' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('region', { name: 'Use first' })).not.toBeInTheDocument()
-    // The same place's items, as rows: name, quantity, tag; tap to edit.
-    expect(screen.getAllByTestId('storage-row')).toHaveLength(4)
+    // Every place's items, as rows: name, quantity, tag; tap to edit (#750: the
+    // List is all places in one list, no longer the open place alone).
+    expect(screen.getAllByTestId('storage-row')).toHaveLength(8)
     expect(screen.queryAllByTestId('storage-tile')).toHaveLength(0)
   })
 
-  it('lists every item in the place, soonest first inside each food group', () => {
+  it("lists the open place's items soonest first inside each food group", () => {
     render(<Harness initialView="list" />)
-    const rows = screen.getAllByTestId('storage-row').map((r) => r.getAttribute('aria-label'))
+    const fridge = screen.getByRole('region', { name: /^Fridge/ })
+    const rows = within(fridge)
+      .getAllByTestId('storage-row')
+      .map((r) => r.getAttribute('aria-label'))
     expect(rows).toEqual([
       'Romaine, 1 head, expires today',
       'Lemons, 1',
-      'Milk, 1 L',
       'Chicken Thighs, 4, expires in 3 days',
+      'Milk, 1 L',
     ])
   })
 

@@ -154,7 +154,9 @@ describe('opening a place', () => {
     expect(within(sheet).getByRole('button', { name: 'Peas, 2 bag' })).toBeInTheDocument()
 
     fireEvent.click(within(sheet).getByRole('button', { name: 'List' }))
-    expect(within(sheet).getAllByTestId('storage-row')).toHaveLength(1)
+    // The List is every place in one list (#750), the Freezer's peas among them.
+    expect(within(sheet).getAllByTestId('storage-row')).toHaveLength(7)
+    expect(within(sheet).getByRole('button', { name: 'Peas, 2 bag' })).toBeInTheDocument()
     expect(screen.getByTestId('storage-sheet')).toBeInTheDocument()
   })
 

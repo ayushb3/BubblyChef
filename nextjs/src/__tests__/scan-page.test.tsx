@@ -5,7 +5,7 @@
  * mounts `ReviewSurface` for the review step (covered separately in
  * scan-review.test.tsx) — these tests pin the container's own wiring: that
  * a successful upload reaches the review step, that confirm only fires the
- * write on explicit user action and then redirects to `/pantry`, and that a
+ * write on explicit user action and then redirects to the kitchen home (`/`; the Pantry tab went in #750), and that a
  * failed write surfaces an error without redirecting.
  */
 
@@ -86,7 +86,7 @@ it('uploading a receipt moves from the upload state to the review state', async 
   expect(mockUploadReceipt).toHaveBeenCalledTimes(1)
 })
 
-it('confirming the review writes via bulkAddPantryItems and redirects to /pantry', async () => {
+it('confirming the review writes via bulkAddPantryItems and redirects to the kitchen', async () => {
   mockUploadReceipt.mockResolvedValue(SCAN_RESULT)
   mockBulkAdd.mockResolvedValue({ count: 1, items: [] })
   renderPage()
@@ -114,7 +114,7 @@ it('confirming the review writes via bulkAddPantryItems and redirects to /pantry
   // The route shows a brief "celebrate" mascot state before redirecting
   // (issue #525), so the push happens ~1.5s after confirm rather than
   // immediately — give waitFor enough headroom for that timer.
-  await waitFor(() => expect(push).toHaveBeenCalledWith('/pantry'), { timeout: 3000 })
+  await waitFor(() => expect(push).toHaveBeenCalledWith('/'), { timeout: 3000 })
 })
 
 it('a failed confirm shows an error and stays on the review step (no redirect)', async () => {
