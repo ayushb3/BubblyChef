@@ -24,7 +24,12 @@ from httpx import ASGITransport, AsyncClient
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.domain.conversion import convert_amount, juice_as_fruit, juice_fruit, unit_kind
 from bubbly_chef.domain.normalizer import (
+    _UNIT_ALIASES,
+    PACKAGE_UNITS,
+    PIECE_UNITS,
     effective_unit,
+    is_package_unit,
+    is_piece_unit,
     is_estimated_size,
     normalize_to_base_unit,
     normalize_unit,
@@ -80,6 +85,20 @@ def test_unit_spellings_resolve(raw: str, canonical: str) -> None:
 )
 def test_unit_kind(unit: str, kind: str | None) -> None:
     assert unit_kind(unit) == kind
+
+
+def test_every_synonym_of_a_piece_or_package_unit_is_guarded_like_it() -> None:
+    """ADR 0003 guard sees the same unit normalize_unit() does (#866).
+
+    A spelling that resolves to a piece/package unit but slips the guard turns
+    "2 cloves shallots" against "3 bulb" into a deduction of 2 whole bulbs.
+    """
+    for raw in _UNIT_ALIASES:
+        canonical = normalize_unit(raw)
+        if canonical == "count":  # "item"/"items" are guarded as the package "item"
+            continue
+        assert is_piece_unit(raw) == (canonical in PIECE_UNITS), raw
+        assert is_package_unit(raw) == (canonical in PACKAGE_UNITS), raw
 
 
 # ---------------------------------------------------------------------------
