@@ -158,8 +158,12 @@ _CLASSIFIED_BASE = {
 }
 
 
-async def _run_stream(context, history, detect=None):
-    """Run the streaming workflow with the AI mocked; return (prompt, detect_mock)."""
+async def _run_stream(context, history, detect=None, real_detection=False):
+    """Run the streaming workflow with the AI mocked.
+
+    Returns (prompt, detect_mock, manager). With `real_detection` the router's own
+    `_detect_amendment` runs, so `manager.complete` calls are the model calls made.
+    """
     prompts: list[str] = []
 
     async def _tokens(**kwargs):
@@ -178,6 +182,11 @@ async def _run_stream(context, history, detect=None):
         "conversation_history": history,
     }
     detect_mock = detect if detect is not None else AsyncMock(return_value=None)
+    detect_patch = (
+        patch.object(router_mod, "_detect_amendment", detect_mock)
+        if not real_detection
+        else patch.object(router_mod, "get_ai_manager", return_value=manager)
+    )
     with (
         patch.object(router_mod, "get_chat_dispatch_graph", return_value=dispatch_graph),
         patch.object(router_mod, "initialize_state", side_effect=lambda s: s),
@@ -186,7 +195,7 @@ async def _run_stream(context, history, detect=None):
         patch.object(router_mod, "get_ai_manager", return_value=manager),
         patch.object(router_mod, "get_repository", AsyncMock(side_effect=RuntimeError("no db"))),
         patch.object(router_mod, "update_session_node", AsyncMock(side_effect=lambda s: s)),
-        patch.object(router_mod, "_detect_amendment", detect_mock),
+        detect_patch,
     ):
         events = [
             json.loads(c)
@@ -200,7 +209,7 @@ async def _run_stream(context, history, detect=None):
             )
         ]
     assert events[-1]["type"] in ("envelope", "done")
-    return prompts[0], detect_mock
+    return prompts[0], detect_mock, manager
 
 
 class TestStreamedCookPrompt:
@@ -210,7 +219,7 @@ class TestStreamedCookPrompt:
             {"role": "user", "content": "How hot should the pan be?"},
             {"role": "assistant", "content": "Medium heat, about 5 minutes to warm."},
         ]
-        prompt, _ = await _run_stream(SINGLE_RECIPE_PIN, history)
+        prompt, _, _ = await _run_stream(SINGLE_RECIPE_PIN, history)
         assert "200 g pasta, 150 ml cream" in prompt
         assert "How hot should the pan be?" in prompt
         assert "Medium heat, about 5 minutes to warm." in prompt
@@ -220,16 +229,16 @@ class TestStreamedCookPrompt:
     @pytest.mark.asyncio
     async def test_meal_cook_prompt_carries_planning_constraints(self):
         context = {**SINGLE_RECIPE_PIN, "meal_constraints": MEAL_CONSTRAINTS}
-        prompt, _ = await _run_stream(context, [])
+        prompt, _, _ = await _run_stream(context, [])
         assert "dairy-free" in prompt
         assert "peanuts" in prompt
         assert "beginner" in prompt
 
     @pytest.mark.asyncio
     async def test_saved_recipe_pin_is_allowed_through_the_amendment_guard(self):
-        """Finding for #814: a full pin for a saved recipe (uuid id, display-line
-        ingredients) passes the stream path's pinned guard, so amendment detection
-        runs for a single-recipe cook exactly as it does for a meal dish."""
+        """A full pin for a saved recipe (uuid id, display-line ingredients) passes
+        the stream path's pinned guard, so a pin that does not opt out (the meal
+        cook, the chat page) still gets amendment detection."""
         detect = AsyncMock(return_value=None)
         pin = {
             "cooking_recipe": {
@@ -240,3 +249,40 @@ class TestStreamedCookPrompt:
         }
         await _run_stream(pin, [], detect=detect)
         detect.assert_awaited_once()
+
+
+def _detection_calls(manager) -> int:
+    """Model calls made by `_detect_amendment` (the only `complete` calls here)."""
+    return manager.complete.await_count
+
+
+class TestAmendmentDetectionOptOut:
+    """The single-recipe cook sends `amendable: false`: no UI to apply an
+    amendment, so no extra model call. The meal pin keeps detection."""
+
+    @pytest.mark.asyncio
+    async def test_single_recipe_question_makes_no_detection_call(self):
+        pin = {"cooking_recipe": {**SINGLE_RECIPE_PIN["cooking_recipe"], "amendable": False}}
+        _, _, manager = await _run_stream(pin, [], real_detection=True)
+        assert _detection_calls(manager) == 0
+
+    @pytest.mark.asyncio
+    async def test_meal_pin_still_makes_one_detection_call(self):
+        meal_pin = {**SINGLE_RECIPE_PIN, "meal_constraints": MEAL_CONSTRAINTS}
+        _, _, manager = await _run_stream(meal_pin, [], real_detection=True)
+        assert _detection_calls(manager) == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_amendable_true_keeps_detection(self):
+        pin = {"cooking_recipe": {**SINGLE_RECIPE_PIN["cooking_recipe"], "amendable": True}}
+        _, _, manager = await _run_stream(pin, [], real_detection=True)
+        assert _detection_calls(manager) == 1
+
+    @pytest.mark.asyncio
+    async def test_opt_out_also_holds_for_a_cooking_session_snapshot(self):
+        """session_mode is `cooking` after the first turn; the flag, resent every
+        turn, must still win over the session-snapshot branch of the guard."""
+        pin = {"cooking_recipe": {**SINGLE_RECIPE_PIN["cooking_recipe"], "amendable": False}}
+        _, _, manager = await _run_stream(pin, [], real_detection=True)
+        assert _CLASSIFIED_BASE["session_mode"] == "cooking"
+        assert _detection_calls(manager) == 0

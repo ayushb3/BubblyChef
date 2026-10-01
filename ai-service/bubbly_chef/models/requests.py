@@ -154,6 +154,9 @@ class ChatRequest(BaseModel):
             "cooking; the recipe is resolved server-side from this id and the "
             "conversation is pinned to it. Legacy: \"cooking_recipe\" "
             "({id, title, ingredients}) — still accepted, same effect. "
+            '"cooking_recipe.amendable" (<bool>) — only an explicit `false` skips the '
+            "amendment-detection model call for the turn (a single-recipe cook has "
+            "nothing to apply an amendment to, issue #814); anything else keeps it. "
             '"meal_constraints" (<object>) — a meal cook\'s stored planning '
             "constraints ({kitchen_limits, recipe_constraints}, issue #814), "
             "rendered as read-only background in the cooking prompt while a dish "

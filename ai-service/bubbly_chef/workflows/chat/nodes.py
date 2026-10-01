@@ -135,6 +135,10 @@ COOKING_RECIPE_KEY = "cooking_recipe"
 # the DB. Avoids the client fetch/send race that could pin an empty context.
 COOKING_RECIPE_ID_KEY = "cooking_recipe_id"
 
+# `cooking_recipe.amendable: false` (issue #814) opts a pin out of amendment
+# detection. Absent or any other value keeps the default: detection runs.
+COOKING_RECIPE_AMENDABLE_KEY = "amendable"
+
 # Ingredient lines kept out of the prompt beyond this — long imported recipes
 # would otherwise crowd out the pantry and history context.
 MAX_PROMPT_INGREDIENTS = 25
@@ -715,6 +719,12 @@ async def _detect_amendment(
     raw_recipe = get_cooking_recipe(state)
     if not raw_recipe:
         # No pinned recipe — amendment detection is not applicable.
+        return None
+    if raw_recipe.get(COOKING_RECIPE_AMENDABLE_KEY) is False:
+        # The client opted this pin out (issue #814): a single-recipe cook has no
+        # ingredient store to apply an amendment to, so the extra model call would
+        # be paid for and thrown away. Only an explicit `false` opts out; every
+        # other pin (meal cook, chat page, session snapshot) keeps detection.
         return None
 
     recipe = normalize_cooking_recipe(raw_recipe)

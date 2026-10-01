@@ -382,6 +382,8 @@ export interface CookingRecipeContext {
   id: string
   title: string
   ingredients: (string | MealCookIngredient)[]
+  /** `false` opts the pin out of amendment detection (single-recipe cook, #814). Default: detect. */
+  amendable?: boolean
 }
 
 /** The state of an "Update what I'm cooking" card (#489), per message. */

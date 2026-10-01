@@ -373,6 +373,8 @@ describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
         id: 'r1',
         title: 'Creamy Tomato Pasta',
         ingredients: ['200 g pasta', '400 g canned tomatoes', '100 ml cream'],
+        // No amendment card here, so no amendment-detection model call.
+        amendable: false,
       },
     })
     // A single-recipe cook has no planning chat, so no meal constraints are sent.

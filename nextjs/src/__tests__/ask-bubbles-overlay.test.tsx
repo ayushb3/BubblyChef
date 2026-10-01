@@ -405,7 +405,12 @@ describe('AskBubblesOverlay — single-recipe cook context (#814)', () => {
     const request = streamChatMessageMock.mock.calls[0][0]
     expect(request.conversation_id).toBe('cook-session-1')
     expect(request.context).toEqual({
-      cooking_recipe: { id: 'dish-1', title: 'Creamy pasta', ingredients: PIN.ingredients },
+      cooking_recipe: {
+        id: 'dish-1',
+        title: 'Creamy pasta',
+        ingredients: PIN.ingredients,
+        amendable: false,
+      },
     })
     expect(request.follow_up_chips).toBe(false)
     expect(screen.getByText('Asking about step 1')).toBeInTheDocument()

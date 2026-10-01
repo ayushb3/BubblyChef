@@ -10,7 +10,8 @@
  *    amendment card is ever rendered. Given `cookContext` (the dish) and a
  *    per-cook-session `conversationId`, each turn carries them as
  *    `context.cooking_recipe` + `conversation_id`, so the model sees the
- *    dish's ingredients and remembers the earlier questions (issue #814).
+ *    dish's ingredients and remembers the earlier questions (issue #814). The
+ *    pin carries `amendable: false`, so the backend skips amendment detection.
  *    Without them the request is `{ message, conversation_id: null,
  *    follow_up_chips: false }`, as before this extraction.
  *  - **Pinned** (the meal cook page's per-dish Ask Bubbles): every turn
@@ -293,6 +294,9 @@ export default function AskBubblesOverlay({
           id: dish.recipe_id,
           title: dish.title,
           ingredients: dish.ingredients,
+          // A single-recipe cook (no `pinned`) can't apply an amendment, so ask the
+          // backend not to spend a model call detecting one (issue #814).
+          ...(pinned ? {} : { amendable: false }),
         },
         ...(mealConstraints ? { meal_constraints: mealConstraints } : {}),
       }
