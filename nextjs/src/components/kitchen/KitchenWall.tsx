@@ -227,6 +227,8 @@ export default function KitchenWall({
             key={p.key}
             type="button"
             data-place={p.key}
+            // The onboarding tour's pantry step points at the fridge (#750).
+            data-tour={p.key === 'fridge' ? 'fridge' : undefined}
             aria-label={placeAccessibleName(p.label, summary)}
             onClick={() => onOpenPlace(p.key)}
             className={HIT}

@@ -175,7 +175,9 @@ describe('deep link /?place=&view=', () => {
     const sheet = await screen.findByTestId('storage-sheet')
     expect(within(sheet).getByRole('heading', { name: 'Freezer' })).toBeInTheDocument()
     expect(within(sheet).getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
-    await waitFor(() => expect(within(sheet).getAllByTestId('storage-row')).toHaveLength(1))
+    // The List is every place in one list (#750): the Freezer's tab is selected.
+    await waitFor(() => expect(within(sheet).getAllByTestId('storage-row')).toHaveLength(7))
+    expect(within(sheet).getByRole('tab', { name: /^Freezer/ })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('defaults to the scene view', async () => {

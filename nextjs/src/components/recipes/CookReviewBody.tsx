@@ -12,6 +12,7 @@
  */
 
 import React from 'react'
+import { storageSheetHref } from '@/lib/kitchen/places'
 import type {
   CookProposal,
   CompoundSuggestion,
@@ -139,12 +140,12 @@ export function ExpiredIngredientsBanner({
         ))}
       </ul>
       <a
-        href="/pantry"
+        href={storageSheetHref({ expiry: ['expired'] })}
         className="text-[11px] font-bold underline"
         style={{ color: 'var(--color-primary-dark)' }}
-        aria-label="Go to pantry to clear expired items"
+        aria-label="Go to your kitchen to clear expired items"
       >
-        Go to Pantry to clear them →
+        Clear them in your kitchen →
       </a>
     </div>
   )

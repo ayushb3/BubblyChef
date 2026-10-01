@@ -81,7 +81,7 @@ BubblyChef/
 │       │   ├── page.tsx             # Dashboard
 │       │   ├── login/page.tsx       # Auth (sign in / sign up)
 │       │   ├── recipes/page.tsx     # Recipe library
-│       │   ├── pantry/page.tsx
+│       │   ├── pantry/page.tsx      # redirect only: the Pantry tab is gone (#750)
 │       │   ├── chat/page.tsx
 │       │   └── api/                 # CRUD route handlers
 │       │       ├── pantry/          # GET/POST, expiring/, [id]/, [id]/slot/
@@ -120,8 +120,8 @@ BubblyChef/
 
 | Path | Page | Notes |
 |---|---|---|
-| `/` | Dashboard | Expiring items widget, quick actions. Tapping a storage place on the kitchen wall opens its storage sheet; `/?place=fridge&view=scene\|list` opens one directly (issue #749) |
-| `/pantry` | Pantry | Browse/manage all items |
+| `/` | Kitchen home | The pixel kitchen wall, expiring items, quick actions. Tapping a storage place opens its storage sheet (Scene \| List). The List is the whole pantry: filters, swipe-to-resolve, Used up / Tossed, edit, and select mode for bulk Move to / Used up / Tossed (issue #750). Deep links: `/?place=fridge&view=scene\|list` (issue #749), `&expiry=expiring,expired` starts the List with the expiry filter on, `/?add=scan\|type` opens the add sheet on that tab |
+| `/pantry` | (redirect) | There is no Pantry tab (issue #750). `/pantry` redirects to `/?place=fridge&view=list`, `/pantry?add=scan` to `/?add=scan`, `/pantry/use-soon` to the List with the expiry filter on |
 | `/recipes` | Recipe library | Search, save, edit, favourite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
@@ -132,7 +132,7 @@ Receipt scanning has two entry points that share the same review UI and the
 same confirm semantics (nothing is written without an explicit confirm):
 the full-page `/scan` route (`app/scan/page.tsx`) and the quick path inside
 the pantry add sheet (`components/pantry/PantryAddSheet.tsx`, tabs `scan` and
-`type`, reached as `/pantry?add=scan`). Both mount the presentation-only
+`type`, reached as `/?add=scan`; the old `/pantry?add=scan` redirects there). Both mount the presentation-only
 `components/scan/ReviewSurface.tsx` for the tiered review; `ScanTab.tsx` still
 owns the sheet's own upload/processing state machine, and `/scan` owns its own
 (issue #259).

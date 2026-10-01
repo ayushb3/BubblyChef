@@ -108,7 +108,7 @@ export default function StorageBulkBar({
     return (
       <div className="flex flex-col gap-2" role="group" aria-label="Confirm toss">
         <p role="alert" className="text-sm font-extrabold text-[color:var(--color-text)]">
-          Toss {items(count)}? They&apos;re removed and counted as wasted.
+          Toss {items(count)}? This can&apos;t be undone.
         </p>
         <div className="flex gap-2">
           <button

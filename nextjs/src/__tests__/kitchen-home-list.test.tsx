@@ -214,13 +214,13 @@ describe('the old Pantry addresses, as the home receives them', () => {
     expect(await screen.findByRole('heading', { name: 'Add to Pantry' })).toBeInTheDocument()
     // The scan panel is the live one; the type panel is inert behind it.
     expect(screen.getByText('Drop your receipt here')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Item name' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Item name' })).not.toBeInTheDocument()
   })
 
   it('/?add=type opens the add sheet on its type tab', async () => {
     mockParams = new URLSearchParams('add=type')
     renderHome()
-    expect(await screen.findByRole('textbox', { name: 'Item name' })).toBeInTheDocument()
+    expect(await screen.findByRole('combobox', { name: 'Item name' })).toBeInTheDocument()
   })
 
   it('closing the add sheet clears ?add so a refresh does not reopen it', async () => {

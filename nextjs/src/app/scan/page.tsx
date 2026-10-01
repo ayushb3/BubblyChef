@@ -53,7 +53,7 @@ export default function ScanPage() {
   // Cancel the pending celebrate-then-redirect if the user navigates away
   // (e.g. taps the bottom nav) before it fires, or the component unmounts
   // for any other reason — otherwise the stale timer still calls
-  // `router.push('/pantry')` afterwards and yanks the user off wherever
+  // `router.push('/')` afterwards and yanks the user off wherever
   // they just navigated to.
   //
   // The same unmount also tears down a scan still in flight (issue #642):
@@ -164,7 +164,7 @@ export default function ScanPage() {
       setState('celebrating')
       celebrateTimerRef.current = setTimeout(() => {
         celebrateTimerRef.current = null
-        router.push('/pantry')
+        router.push('/')
       }, 1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add items')
@@ -177,7 +177,7 @@ export default function ScanPage() {
       <BubblesHeader
         rightSlot={
           <Link
-            href="/pantry"
+            href="/"
             className="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] underline transition-colors"
           >
             Cancel

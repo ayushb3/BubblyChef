@@ -130,6 +130,9 @@ export interface StoredItem extends PlaceItem {
   unit: string
 }
 
+/** The List's expiry filters, as the deep link's `expiry` param spells them. */
+export type ExpiryFacet = 'expiring' | 'expired'
+
 /**
  * The home address that opens the storage sheet (issue #750: the Pantry tab's
  * replacement). `/?place=fridge&view=list&expiry=expiring,expired` is the sheet
@@ -144,7 +147,7 @@ export function storageSheetHref({
   place?: PlaceKey
   view?: 'scene' | 'list'
   /** Expiry facets to start with: `expiring`, `expired`. */
-  expiry?: readonly ('expiring' | 'expired')[]
+  expiry?: readonly ExpiryFacet[]
 } = {}): string {
   const params = new URLSearchParams({ place, view })
   if (expiry && expiry.length > 0) params.set('expiry', expiry.join(','))

@@ -212,8 +212,8 @@ describe('Scene | List', () => {
     expect(rows).toEqual([
       'Romaine, 1 head, expires today',
       'Lemons, 1',
-      'Chicken Thighs, 4, expires in 3 days',
       'Milk, 1 L',
+      'Chicken Thighs, 4, expires in 3 days',
     ])
   })
 

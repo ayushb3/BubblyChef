@@ -51,6 +51,9 @@ const ITEMS: StoredItem[] = [
   item('a', 'apples', 'counter', { quantity: 5 }),
 ]
 
+type MoveFn = (ids: string[], place: PlaceKey) => Promise<BulkResult>
+type ResolveFn = (ids: string[], outcome: 'used' | 'tossed') => Promise<BulkResult>
+
 const ok = (ids: string[]): BulkResult => ({ done: ids, failed: [] })
 
 function Harness({
@@ -59,16 +62,16 @@ function Harness({
   initialView = 'list',
   initialExpiry,
   onEdit = jest.fn(),
-  onMove = jest.fn(async (ids: string[]) => ok(ids)),
-  onResolve = jest.fn(async (ids: string[]) => ok(ids)),
+  onMove = jest.fn<Promise<BulkResult>, Parameters<MoveFn>>(async (ids) => ok(ids)),
+  onResolve = jest.fn<Promise<BulkResult>, Parameters<ResolveFn>>(async (ids) => ok(ids)),
 }: {
   items?: StoredItem[]
   initialPlace?: PlaceKey
   initialView?: StorageView
   initialExpiry?: readonly string[]
   onEdit?: (item: StoredItem) => void
-  onMove?: (ids: string[], place: PlaceKey) => Promise<BulkResult>
-  onResolve?: (ids: string[], outcome: 'used' | 'tossed') => Promise<BulkResult>
+  onMove?: MoveFn
+  onResolve?: ResolveFn
 }) {
   const [place, setPlace] = useState<PlaceKey>(initialPlace)
   const [view, setView] = useState<StorageView>(initialView)
@@ -120,9 +123,9 @@ describe('List: every place in one list', () => {
     expect(names).toEqual([
       'Romaine, 1 head, expires today',
       'Lemons, 1',
-      'Chicken Thighs, 4, expires in 3 days',
       'Old Yogurt, 1 tub, expired',
       'Milk, 1 L',
+      'Chicken Thighs, 4, expires in 3 days',
     ])
   })
 
@@ -200,8 +203,8 @@ describe('List: filters', () => {
     render(<Harness initialExpiry={['expiring', 'expired']} />)
     expect(rowNames()).toEqual([
       'Romaine, 1 head, expires today',
-      'Chicken Thighs, 4, expires in 3 days',
       'Old Yogurt, 1 tub, expired',
+      'Chicken Thighs, 4, expires in 3 days',
     ])
     expect(screen.getByRole('button', { name: /Filter by expiry status, 2 selected/ })).toBeInTheDocument()
   })
@@ -262,14 +265,14 @@ describe('List: resolving one item', () => {
   })
 
   it('"Used up" commits on one tap', async () => {
-    const onResolve = jest.fn(async (ids: string[]) => ok(ids))
+    const onResolve = jest.fn<Promise<BulkResult>, Parameters<ResolveFn>>(async (ids) => ok(ids))
     render(<Harness onResolve={onResolve} />)
     fireEvent.click(within(rowOf(/^Romaine/)).getByRole('button', { name: /used up/i }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(['r'], 'used'))
   })
 
   it('"Tossed" only commits after the confirm', async () => {
-    const onResolve = jest.fn(async (ids: string[]) => ok(ids))
+    const onResolve = jest.fn<Promise<BulkResult>, Parameters<ResolveFn>>(async (ids) => ok(ids))
     render(<Harness onResolve={onResolve} />)
     fireEvent.click(within(rowOf(/^Romaine/)).getByRole('button', { name: /tossed/i }))
     expect(onResolve).not.toHaveBeenCalled()
@@ -327,7 +330,7 @@ describe('List: select mode and bulk edits', () => {
   })
 
   it('Move to... offers the four places and moves exactly the selected items', async () => {
-    const onMove = jest.fn(async (ids: string[]) => ok(ids))
+    const onMove = jest.fn<Promise<BulkResult>, Parameters<MoveFn>>(async (ids) => ok(ids))
     render(<Harness onMove={onMove} />)
     enter()
     tick(/^Lemons/)
@@ -356,7 +359,7 @@ describe('List: select mode and bulk edits', () => {
   })
 
   it('"Used up" resolves every selected item as used', async () => {
-    const onResolve = jest.fn(async (ids: string[]) => ok(ids))
+    const onResolve = jest.fn<Promise<BulkResult>, Parameters<ResolveFn>>(async (ids) => ok(ids))
     render(<Harness onResolve={onResolve} />)
     enter()
     tick(/^Lemons/)
@@ -369,7 +372,7 @@ describe('List: select mode and bulk edits', () => {
   })
 
   it('"Tossed" asks first, then resolves every selected item as tossed', async () => {
-    const onResolve = jest.fn(async (ids: string[]) => ok(ids))
+    const onResolve = jest.fn<Promise<BulkResult>, Parameters<ResolveFn>>(async (ids) => ok(ids))
     render(<Harness onResolve={onResolve} />)
     enter()
     tick(/^Lemons/)
@@ -420,13 +423,16 @@ describe('List: select mode and bulk edits', () => {
     await act(async () => finish(ok(['l'])))
   })
 
-  it('only acts on what is on screen: a filter drops hidden items from the selection', () => {
+  it('a new search leaves select mode and drops the selection, so nothing unseen is acted on', () => {
     render(<Harness />)
     enter()
-    fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
-    fireEvent.click(screen.getByRole('button', { name: /Filter by expiry/ }))
-    fireEvent.click(within(screen.getByRole('group', { name: /Filter by expiry/ })).getByRole('button', { name: 'Expired' }))
+    tick(/^Milk/)
     expect(screen.getByText('1 selected')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'es' } })
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
+    enter()
+    expect(screen.getByText('0 selected')).toBeInTheDocument()
   })
 
   it('Scene has no select mode, and switching to it leaves select mode', () => {
@@ -440,7 +446,7 @@ describe('List: select mode and bulk edits', () => {
   })
 
   it('works on search results too (board A4, panel 3)', async () => {
-    const onResolve = jest.fn(async (ids: string[]) => ok(ids))
+    const onResolve = jest.fn<Promise<BulkResult>, Parameters<ResolveFn>>(async (ids) => ok(ids))
     render(<Harness onResolve={onResolve} />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'es' } })
     enter()
