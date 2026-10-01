@@ -1,0 +1,7 @@
+## Re-review (round 2) — PR #720, *pantry sort*
+
+Both findings from round 1 are fixed in the current diff.
+
+**Verdict: `looks mergeable`**
+
+<!-- verdict: looks-mergeable -->
