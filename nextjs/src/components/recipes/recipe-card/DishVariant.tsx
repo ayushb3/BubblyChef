@@ -145,7 +145,7 @@ export default function DishVariant({
                 <h4 className="sr-only">Ingredients</h4>
                 <ul>
                   {ingredients.map((ing, i) => {
-                    const { name, quantityText, preparation } = ingredientParts(ing)
+                    const { displayName, quantityText, preparation } = ingredientParts(ing)
                     const tag = tagForRow(rowMatches, i)
                     return (
                       <li
@@ -156,7 +156,7 @@ export default function DishVariant({
                           {quantityText}
                         </span>
                         <span className="flex-1 text-sm leading-[19px] font-bold">
-                          {name}
+                          {displayName}
                           {preparation && (
                             <span className="font-semibold text-[var(--color-muted)]">, {preparation}</span>
                           )}

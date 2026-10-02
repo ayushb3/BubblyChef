@@ -4,14 +4,22 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import RecipeCard from '@/components/recipes/RecipeCard'
 import EmptyState from '@/components/ui/EmptyState'
+import RecipeSearchBar from '@/components/recipes/RecipeSearchBar'
 import { fetchMeals } from '@/lib/api/meals'
+import { searchMeals } from '@/lib/recipe-search'
+
+interface MealsListProps {
+  /** The Meals tab's own search query (issue #904), held by the library so it outlives a tab switch. */
+  query?: string
+  onQueryChange: (query: string) => void
+}
 
 /**
  * The library's "Meals" filter (issue #650 / spec #647 "Chat and meal UI") —
  * lists saved meals (never drafts; `fetchMeals()`'s default). Tapping one
  * opens the minimal meal page.
  */
-export default function MealsList() {
+export default function MealsList({ query = '', onQueryChange }: MealsListProps) {
   const router = useRouter()
 
   const { data: meals, isLoading } = useQuery({
@@ -44,19 +52,38 @@ export default function MealsList() {
     )
   }
 
+  // Search runs over every meal the list loaded, by meal title and dish titles.
+  const shown = searchMeals(meals, query)
+
   return (
-    <ul className="flex flex-col gap-3 w-full max-w-md mx-auto px-2" role="list" aria-label="Saved meals">
-      {meals.map((meal) => (
-        <li key={meal.id}>
-          <RecipeCard
-            variant="compact"
-            href={`/meals/${meal.id}`}
-            title={meal.title}
-            dishes={meal.dishes.map((d) => d.title).filter((t): t is string => Boolean(t))}
-            servings={meal.servings}
-          />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      <div className="px-2">
+        <RecipeSearchBar
+          onSearch={onQueryChange}
+          initialValue={query}
+          placeholder="Search your meals..."
+        />
+      </div>
+
+      {shown.length === 0 ? (
+        <p className="font-sans py-8 text-center text-sm text-[var(--color-muted)]">
+          No results for &ldquo;{query}&rdquo;
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-3 w-full max-w-md mx-auto px-2" role="list" aria-label="Saved meals">
+          {shown.map((meal) => (
+            <li key={meal.id}>
+              <RecipeCard
+                variant="compact"
+                href={`/meals/${meal.id}`}
+                title={meal.title}
+                dishes={meal.dishes.map((d) => d.title).filter((t): t is string => Boolean(t))}
+                servings={meal.servings}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

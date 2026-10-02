@@ -231,6 +231,31 @@ describe('/chat?plan=dinner — home screen handoff (#651)', () => {
   })
 })
 
+describe('/chat?suggest=1 — cook nudge handoff (#905)', () => {
+  it('auto-sends the suggestion request exactly once under a StrictMode double mount, starts fresh (no resume), and shows the context card', async () => {
+    withParams('suggest=1')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <ThemeProvider>
+            <ChatPage />
+          </ThemeProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+    expect(sendMessage).toHaveBeenCalledWith(
+      "I haven't cooked in a while. What should I make today?",
+    )
+    expect(useChatOptions).toHaveBeenCalledWith(expect.objectContaining({ skipResume: true }))
+    expect(screen.getByRole('button', { name: /dismiss .*context/i })).toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('/chat?ask= — Home "What\'s for dinner?" input (#854)', () => {
   it('sends the typed text as the first message exactly once under a StrictMode double mount', async () => {
     withParams(new URLSearchParams({ ask: 'something with eggs & rice' }).toString())
@@ -266,6 +291,7 @@ describe('a consumed seed is stripped from the URL (#854)', () => {
   it.each([
     ['ask', 'ask=something+with+eggs'],
     ['plan', 'plan=dinner&with=eggs|rice'],
+    ['suggest', 'suggest=1'],
     ['tip', 'tip=salt+early'],
     ['use', 'use=eggs&expires=2099-01-01'],
     ['meal', 'meal=0b6e2f1a-1111-4222-8333-444455556666&title=Lemon+pasta'],

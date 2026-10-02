@@ -13,8 +13,14 @@
  * leading number ("salt to taste") shows as written.
  */
 
-import { formatAmount } from '@/lib/format'
-import { TO_TASTE, cleanIngredientAmount, cleanIngredientString } from '@/lib/ingredient-amount'
+import {
+  TO_TASTE,
+  cleanIngredientAmount,
+  cleanIngredientString,
+  formatIngredientAmount,
+  formatIngredientText,
+  formatQuantity,
+} from '@/lib/ingredient-amount'
 import type { MealCookIngredient } from '@/types/meals'
 
 export interface CookIngredient {
@@ -147,23 +153,29 @@ export function cookIngredientsFor(
       out.push({
         key: String(i),
         name: stripLeadingAmount(text) || text,
-        label: scaleIngredientString(text, stringScale),
+        // "1 count eggs" reads as "1 egg", "3 tablespoon sugar" as "3 tbsp sugar" (#901).
+        label: formatIngredientText(scaleIngredientString(text, stringScale)),
       })
       return
     }
     const name = (ing.name ?? '').trim()
     if (!name) return
     // A count of a spice, powder or liquid is "to taste", never "0.25 count" (#892).
-    const cleaned = cleanIngredientAmount(name, ing.quantity, ing.unit)
-    if (cleaned.toTaste) {
+    if (cleanIngredientAmount(name, ing.quantity, ing.unit).toTaste) {
       out.push({ key: String(i), name, label: `${name}, ${TO_TASTE}` })
       return
     }
-    const amount =
-      typeof ing.quantity === 'number' && Number.isFinite(ing.quantity)
-        ? formatAmount(ing.quantity, ing.unit)
-        : ''
-    out.push({ key: String(i), name, label: amount ? `${amount} ${name}` : name })
+    if (typeof ing.quantity !== 'number' || !Number.isFinite(ing.quantity)) {
+      out.push({ key: String(i), name, label: name })
+      return
+    }
+    // Every other amount reads like a recipe: no "count", plural units, fractions (#901). "item"
+    // is the pantry's filler package unit, so it is not read out ("2 milk", not "2 items milk").
+    const filler = /^items?$/i.test((ing.unit ?? '').trim())
+    const amount = filler
+      ? { quantityText: formatQuantity(ing.quantity), name }
+      : formatIngredientAmount(name, ing.quantity, ing.unit)
+    out.push({ key: String(i), name, label: `${amount.quantityText} ${amount.name}`.trim() })
   })
   return out
 }

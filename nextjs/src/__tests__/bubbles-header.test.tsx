@@ -125,7 +125,9 @@ describe('/scan draws the same header (#894)', () => {
     )
     expect(screen.getByRole('heading', { level: 1, name: 'BubblyChef' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Scan a receipt' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/')
+    // The right slot is the Recipes tab's profile button; no Cancel (#905).
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
+    expect(screen.queryByRole('link', { name: 'Cancel' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Say hi to Bubbly' })).toBeInTheDocument()
   })
 })

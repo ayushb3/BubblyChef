@@ -1,5 +1,6 @@
 /**
- * Issue #855: the library has a Favourites filter, finds recipes by ingredient
+ * Issue #855: the library has a Favorites filter (its heart toggle lives in the
+ * loader's tab row since #904; RecipeBook takes it as `favoritesOnly`), finds recipes by ingredient
  * and tag as well as title, and shows "Cooked Nx, last ..." on a card that has
  * been cooked.
  */
@@ -36,14 +37,14 @@ const RECIPES: Recipe[] = [
   recipe({ id: 'r3', title: 'Pancakes', ingredients: ['flour', 'milk'], is_favorite: true }),
 ]
 
-function renderBook(recipes = RECIPES) {
+function renderBook(recipes = RECIPES, favoritesOnly = false) {
   global.fetch = jest.fn(() =>
     Promise.resolve({ ok: true, status: 200, json: async () => ({}) }),
   ) as unknown as typeof fetch
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <RecipeBook recipes={recipes} onMutate={jest.fn()} />
+      <RecipeBook recipes={recipes} onMutate={jest.fn()} favoritesOnly={favoritesOnly} />
     </QueryClientProvider>,
   )
 }
@@ -68,54 +69,40 @@ beforeEach(() => {
   window.sessionStorage.clear()
 })
 
-describe('Favourites filter (issue #855)', () => {
-  it('shows a Favourites chip that is off by default, with every recipe listed', () => {
+describe('Favorites filter (issue #855)', () => {
+  it('lists every recipe when the filter is off, and has no chip row of its own', () => {
     renderBook()
-    const chip = screen.getByRole('button', { name: /favourites/i })
-    expect(chip).toHaveAttribute('aria-pressed', 'false')
+    // The toggle moved to the library's tab row (#904); the book only has the search bar.
+    expect(screen.queryByRole('button', { name: /favou?rites/i })).not.toBeInTheDocument()
     expect(screen.getAllByTestId('recipe-card-saved')).toHaveLength(3)
   })
 
-  it('narrows the list to favourites when pressed, and back when pressed again', () => {
-    renderBook()
-    const chip = screen.getByRole('button', { name: /favourites/i })
-
-    fireEvent.click(chip)
-    expect(chip).toHaveAttribute('aria-pressed', 'true')
+  it('narrows the list to favorites when the filter is on', () => {
+    renderBook(RECIPES, true)
     expect(screen.getAllByTestId('recipe-card-saved')).toHaveLength(2)
     expect(screen.queryByText('Creamy Tomato Pasta')).not.toBeInTheDocument()
     expect(screen.getByText('2 of 3 recipes')).toBeInTheDocument()
-
-    fireEvent.click(chip)
-    expect(screen.getAllByTestId('recipe-card-saved')).toHaveLength(3)
   })
 
   it('combines with search', () => {
-    renderBook()
-    fireEvent.click(screen.getByRole('button', { name: /favourites/i }))
+    renderBook(RECIPES, true)
     search('tomato')
     expect(screen.queryByTestId('recipe-card-saved')).not.toBeInTheDocument()
     search('pancakes')
     expect(screen.getAllByTestId('recipe-card-saved')).toHaveLength(1)
   })
 
-  it('says there are no favourites yet when the filter is on and none are hearted', () => {
-    renderBook([recipe({ id: 'a', title: 'Plain Rice' })])
-    fireEvent.click(screen.getByRole('button', { name: /favourites/i }))
+  it('says there are no favorites yet when the filter is on and none are hearted', () => {
+    renderBook([recipe({ id: 'a', title: 'Plain Rice' })], true)
     expect(screen.queryByTestId('recipe-card-saved')).not.toBeInTheDocument()
-    expect(screen.getByText(/no favourites yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/no favorites yet/i)).toBeInTheDocument()
+    expect(screen.queryByText(/favourites/i)).not.toBeInTheDocument()
   })
 
-  it('drops a recipe from the filtered list the moment it is unfavourited', () => {
-    renderBook()
-    fireEvent.click(screen.getByRole('button', { name: /favourites/i }))
+  it('drops a recipe from the filtered list the moment it is unfavorited', () => {
+    renderBook(RECIPES, true)
     fireEvent.click(screen.getByRole('button', { name: 'Unfavorite: Pancakes' }))
     expect(screen.queryByText('Pancakes')).not.toBeInTheDocument()
-  })
-
-  it('is not offered on an empty library', () => {
-    renderBook([])
-    expect(screen.queryByRole('button', { name: /favourites/i })).not.toBeInTheDocument()
   })
 })
 

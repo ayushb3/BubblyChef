@@ -1,7 +1,7 @@
 'use client'
 
 import { titleCase } from '@/lib/format'
-import { TO_TASTE, cleanIngredientAmount } from '@/lib/ingredient-amount'
+import { formatIngredientAmount } from '@/lib/ingredient-amount'
 import SpringButton from '@/components/ui/SpringButton'
 import PixelPanel from '@/components/ui/PixelPanel'
 import ChatCardHeader from './ChatCardHeader'
@@ -20,13 +20,6 @@ interface CookingAmendmentCardProps {
   errorMessage?: string
   onApply: () => void
   onDismiss: () => void
-}
-
-function quantityText(name: string, quantity: number, unit: string): string {
-  // A count of a spice or liquid is "to taste", never "0.25 count" (#892).
-  if (cleanIngredientAmount(name, quantity, unit).toTaste) return TO_TASTE
-  const q = Number.isInteger(quantity) ? String(quantity) : String(Math.round(quantity * 100) / 100)
-  return [q, unit].filter(Boolean).join(' ')
 }
 
 /**
@@ -64,17 +57,19 @@ export default function CookingAmendmentCard({
           <p className="text-sm text-[var(--color-text)]">{proposal.change_summary}</p>
         )}
         <ul className="flex flex-col gap-1">
-          {proposal.amended_ingredients.map((ing, i) => (
-            <li key={`${ing.name}-${i}`} className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="text-[var(--color-text)]">
-                <span>{titleCase(ing.name)}</span>
-                {ing.optional && <span className="text-[var(--color-muted)]"> (optional)</span>}
-              </span>
-              <span className="text-[var(--color-muted)] shrink-0">
-                {quantityText(ing.name, ing.quantity, ing.unit)}
-              </span>
-            </li>
-          ))}
+          {proposal.amended_ingredients.map((ing, i) => {
+            // No "count", plural units, fractions, and a count of a spice is "to taste" (#892, #901).
+            const amount = formatIngredientAmount(ing.name, ing.quantity, ing.unit)
+            return (
+              <li key={`${ing.name}-${i}`} className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="text-[var(--color-text)]">
+                  <span>{titleCase(amount.name)}</span>
+                  {ing.optional && <span className="text-[var(--color-muted)]"> (optional)</span>}
+                </span>
+                <span className="text-[var(--color-muted)] shrink-0">{amount.quantityText}</span>
+              </li>
+            )
+          })}
         </ul>
       </div>
 
