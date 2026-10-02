@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
+import SpringButton from '@/components/ui/SpringButton'
 import BubblesHeader from '@/components/layout/BubblesHeader'
+import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import ScanDropzone, { ScanHandoffPanel, ScanProcessingPanel } from '@/components/scan/ScanDropzone'
 import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
@@ -32,6 +34,7 @@ type ScanPageState = 'upload' | 'processing' | 'handoff'
 
 export default function ScanPage() {
   const handOff = useScanHandOff()
+  const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const [state, setState] = useState<ScanPageState>('upload')
@@ -40,7 +43,7 @@ export default function ScanPage() {
 
   const { isDragActive, dropzoneHandlers } = useFileDropzone({ onFile: handleFileSelect })
 
-  // Leaving mid-scan (the bottom nav, Cancel) tears down a scan still in flight
+  // Leaving mid-scan (the bottom nav) tears down a scan still in flight
   // (issue #642): the request is aborted so a vision call nobody is waiting for
   // stops billing, and `unmountedRef` keeps its late settle from touching state
   // or handing a scan to a user who has gone elsewhere.
@@ -126,16 +129,7 @@ export default function ScanPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      <BubblesHeader
-        rightSlot={
-          <Link
-            href="/"
-            className="inline-flex min-h-[44px] items-center px-2 text-sm font-bold text-[var(--color-text)] underline underline-offset-2"
-          >
-            Cancel
-          </Link>
-        }
-      />
+      <BubblesHeader rightSlot={<ProfileHeaderButton />} />
 
       <div className="px-6 pt-4">
         {/* The page's own heading: the shared header above says BubblyChef (#894). */}
@@ -162,6 +156,13 @@ export default function ScanPage() {
                 onChoose={() => inputRef.current?.click()}
                 hasError={!!error}
               />
+
+              {/* The way into the grocery list: the header carries no grocery button (#905). */}
+              <div className="mt-4 flex justify-center">
+                <SpringButton variant="secondary" onClick={() => router.push('/grocery')}>
+                  <span aria-hidden="true">🛒</span> Grocery list
+                </SpringButton>
+              </div>
 
               <input
                 ref={inputRef}
