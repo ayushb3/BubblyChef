@@ -16,7 +16,7 @@ jest.mock('framer-motion', () => ({
   useReducedMotion: () => mockReduced,
 }))
 
-import BubblesMascot, { THINKING_FLIP_MS } from '@/components/ui/BubblesMascot'
+import BubblesMascot, { FLIP_MS, THINKING_FLIP_MS } from '@/components/ui/BubblesMascot'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import MealOpenWaitingCard, { MEAL_OPEN_STATUS_MS } from '@/components/chat/MealOpenWaitingCard'
 import CompactVariant from '@/components/recipes/recipe-card/CompactVariant'
@@ -90,10 +90,32 @@ describe('thinking Bubbles is a two-frame flip-book (issue #887)', () => {
     expect(isMirrored(img)).toBe(false)
   })
 
-  it('only the thinking pose flips', () => {
+  it('only the thinking pose flips by default', () => {
     render(<BubblesMascot state="happy" />)
     const img = screen.getByAltText('Bubbles happy')
     advance(THINKING_FLIP_MS * 3)
+    expect(isMirrored(img)).toBe(false)
+  })
+
+  it('any pose can take the flip with the flip prop, and thinking can be held still with flip={false}', () => {
+    const { unmount } = render(<BubblesMascot state="happy" flip />)
+    const happy = screen.getByAltText('Bubbles happy')
+    expect(isMirrored(happy)).toBe(false)
+    advance(FLIP_MS)
+    expect(isMirrored(happy)).toBe(true)
+    unmount()
+
+    render(<BubblesMascot state="thinking" flip={false} />)
+    const still = screen.getByAltText('Bubbles thinking')
+    advance(FLIP_MS * 4)
+    expect(isMirrored(still)).toBe(false)
+  })
+
+  it('the flip prop is still under reduced motion', () => {
+    mockReduced = true
+    render(<BubblesMascot state="happy" flip />)
+    const img = screen.getByAltText('Bubbles happy')
+    advance(FLIP_MS * 4)
     expect(isMirrored(img)).toBe(false)
   })
 

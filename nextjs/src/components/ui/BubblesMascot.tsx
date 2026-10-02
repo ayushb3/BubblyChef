@@ -12,6 +12,14 @@ interface BubblesMascotProps {
   size?: number
   className?: string
   animate?: boolean
+  /**
+   * The two-frame flip-book (issue #887): the original image, then the mirrored
+   * one, a hard cut every `FLIP_MS`. On by default for `thinking` and off for
+   * every other pose; pass `flip` to give any pose the flip (a tap reaction, say)
+   * or `flip={false}` to hold the thinking pose still. Always still under
+   * reduced motion or `animate={false}`.
+   */
+  flip?: boolean
 }
 
 // Exported (not just module-private) so tests can walk every entry and
@@ -29,13 +37,14 @@ export const STATE_SRC: Record<BubblesState, string> = {
 }
 
 /**
- * The thinking pose is a two-frame flip-book (issue #887): the original image,
- * then the same image mirrored, a hard stepped cut (no tween) every
- * `THINKING_FLIP_MS`. Bubbles is part of the world, so it steps frame by frame
- * rather than gliding. Under reduced motion, or with `animate={false}`, it holds
- * the original frame.
+ * The flip-book beat (issue #887): the original image, then the same image
+ * mirrored, a hard stepped cut (no tween) every `FLIP_MS`. Bubbly is part of the
+ * world, so it steps frame by frame rather than gliding. Under reduced motion, or
+ * with `animate={false}`, it holds the original frame.
  */
-export const THINKING_FLIP_MS = 450
+export const FLIP_MS = 450
+/** The thinking pose's beat; the same flip-book. */
+export const THINKING_FLIP_MS = FLIP_MS
 
 /** Sparkle burst positions fired outward from the mascot on `celebrate` (issue #525). */
 const SPARKLES = [
@@ -49,16 +58,18 @@ export default function BubblesMascot({
   size = 80,
   className,
   animate = true,
+  flip,
 }: BubblesMascotProps) {
   // Gates all new motion (bounce, sparkle burst) on top of the existing
   // `animate` prop gate — `prefers-reduced-motion: reduce` still swaps the
   // image/badge for the right state, it just skips the movement.
   const { reduced: prefersReducedMotion } = useMotionConfig()
   const motionEnabled = animate && !prefersReducedMotion
-  // `useSteppedFrame` already holds frame 0 under reduced motion; `state ===
-  // 'thinking' && animate` keeps every other pose (and every still use) off the timer.
-  const flipFrame = useSteppedFrame(2, THINKING_FLIP_MS, state === 'thinking' && animate)
-  const mirrored = state === 'thinking' && flipFrame === 1
+  // `useSteppedFrame` already holds frame 0 under reduced motion; `flips &&
+  // animate` keeps every still use off the timer.
+  const flips = flip ?? state === 'thinking'
+  const flipFrame = useSteppedFrame(2, FLIP_MS, flips && animate)
+  const mirrored = flips && flipFrame === 1
 
   // Re-mounting BubblesMascot with `state="celebrate"` already replays the
   // bounce (it's driven by `animate` running from `initial` on mount), but a
@@ -118,7 +129,7 @@ export default function BubblesMascot({
           alt={`Bubbles ${state}`}
           width={size}
           height={size}
-          data-flip-frame={isThinking ? (mirrored ? 'mirrored' : 'original') : undefined}
+          data-flip-frame={flips ? (mirrored ? 'mirrored' : 'original') : undefined}
           style={{
             width: size,
             height: size,

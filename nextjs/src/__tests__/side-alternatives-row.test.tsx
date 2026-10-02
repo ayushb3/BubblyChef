@@ -131,11 +131,11 @@ describe('SideAlternativesRow', () => {
 
 // Issue #887 — waiting states for the add-a-side row.
 describe('SideAlternativesRow waiting states (issue #887)', () => {
-  it('while loading, says Bubbles is thinking of sides, beside an animated Bubbles', () => {
+  it('while loading, says Bubbly is thinking of sides, beside an animated Bubbles', () => {
     render(
       <SideAlternativesRow state="loading" alternatives={[]} onPick={jest.fn()} onRetry={jest.fn()} onCancel={jest.fn()} />,
     )
-    expect(screen.getByRole('status')).toHaveTextContent('Bubbles is thinking of sides…')
+    expect(screen.getByRole('status')).toHaveTextContent('Bubbly is thinking of sides…')
     expect(screen.getAllByRole('status')).toHaveLength(1)
     expect(screen.getByAltText('Bubbles thinking')).toBeInTheDocument()
   })

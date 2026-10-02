@@ -884,7 +884,7 @@ describe('meal screen — add a side waiting states (issue #887)', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Add a side' }))
 
     expect(await screen.findAllByTestId('side-alternative-skeleton')).toHaveLength(3)
-    expect(screen.getByRole('status')).toHaveTextContent('Bubbles is thinking of sides…')
+    expect(screen.getByRole('status')).toHaveTextContent('Bubbly is thinking of sides…')
     expect(fetchSideAlternatives).toHaveBeenCalledTimes(1)
     expect(expandMealDish).not.toHaveBeenCalled()
 

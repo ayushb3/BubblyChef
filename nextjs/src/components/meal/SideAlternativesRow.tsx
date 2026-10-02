@@ -69,7 +69,7 @@ export default function SideAlternativesRow({
               <BubblesMascot state="thinking" size={32} />
             </span>
             <p role="status" className="text-xs font-bold" style={{ color: 'var(--color-muted)' }}>
-              Bubbles is thinking of sides…
+              Bubbly is thinking of sides…
             </p>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Loading alternatives">
