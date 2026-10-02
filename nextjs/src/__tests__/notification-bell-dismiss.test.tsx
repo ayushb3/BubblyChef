@@ -363,6 +363,28 @@ describe('the dismiss control', () => {
     expect(within(row).getByRole('link')).not.toContainElement(button)
   })
 
+  it('dismisses a finished timer when the row body is tapped, as well as by the keycap', async () => {
+    window.localStorage.setItem(
+      TIMERS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: 'timer-1',
+          label: 'Pasta',
+          durationSeconds: 600,
+          endAt: null,
+          frozenRemaining: 0,
+          status: 'completed',
+        },
+      ]),
+    )
+    mount()
+    await openBell()
+    fireEvent.click(await screen.findByText('Pasta timer finished'))
+
+    await waitFor(() => expect(screen.queryByText('Pasta timer finished')).not.toBeInTheDocument())
+    expect(JSON.parse(window.localStorage.getItem(TIMERS_STORAGE_KEY) ?? '[]')).toEqual([])
+  })
+
   it('leaves a finished timer on the timer store, with no inbox record kept for it', async () => {
     window.localStorage.setItem(
       TIMERS_STORAGE_KEY,

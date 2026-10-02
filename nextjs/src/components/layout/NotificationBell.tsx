@@ -19,10 +19,13 @@ const TIER_STYLE: Record<InboxTier, { bg: string; text: string }> = {
 /**
  * Header bell + dropdown for the lite notification center (#496, Spec B.4).
  *
- * Compute-on-load, no persistence, no read/unread: `useInboxEntries` derives
- * fresh entries every time the dropdown opens (`refresh()` below), and
- * nothing here is written to storage or the DB. Fixed trigger set — there is
- * no settings surface, by design (see the issue's "Decisions settled here").
+ * Compute-on-load, no read/unread: `useInboxEntries` derives fresh entries
+ * every time the dropdown opens (`refresh()` below). The only thing kept is
+ * the user's dismissals (issue #906): a per-user localStorage record keyed to
+ * each entry's state (`lib/inbox-dismissals-store.ts`), which only hides an
+ * entry. Nothing is written to the DB, and no pantry or grocery data changes.
+ * Fixed trigger set — there is no settings surface, by design (see the issue's
+ * "Decisions settled here").
  *
  * Rendered inside `BubblesHeader` itself (next to whatever `rightSlot` the
  * page passes, usually `ProfileHeaderButton`) so every page that already
@@ -121,7 +124,8 @@ export default function NotificationBell() {
         type="button"
         onClick={toggleOpen}
         // "unread" would imply persisted read state, which this lite inbox
-        // deliberately doesn't have (#496: "No persistence, no read/unread").
+        // deliberately doesn't have (#496: "no read/unread"). Dismissals are
+        // remembered, but they hide entries; they don't mark them read.
         aria-label={
           error
             ? 'Notifications, could not check for updates'
@@ -287,7 +291,18 @@ function InboxRow({
           {content}
         </Link>
       ) : (
-        <div className={contentClass}>{content}</div>
+        // A timer row has no destination: tapping its body dismisses it, as
+        // the tap-target table says (#496, "timer -> dismiss"). The keycap
+        // beside it does the same.
+        <button
+          type="button"
+          onClick={() => onDismiss(entry)}
+          tabIndex={-1}
+          aria-hidden="true"
+          className={`${contentClass} cursor-pointer`}
+        >
+          {content}
+        </button>
       )}
       {/* A 44 px tap target around a small keycap. */}
       <button
