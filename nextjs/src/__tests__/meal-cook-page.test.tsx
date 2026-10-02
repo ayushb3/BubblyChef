@@ -1378,7 +1378,7 @@ describe('MealCookPage — Start now is never locked behind a running timer (iss
     expect(screen.getByTestId('meal-now-card-keeps-running')).toHaveTextContent('Simmer sauce keeps running')
     expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mark Simmer sauce done early' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Simmer sauce done early' })).toBeInTheDocument()
   })
 
   it('Start now makes the step active while the running timer keeps running; Done, then the timer finishing, ends the cook', async () => {
@@ -1424,10 +1424,10 @@ describe('MealCookPage — Start now is never locked behind a running timer (iss
   it('Done early dismisses the running timer, marks its step done and unblocks the dependent', async () => {
     seedSimmerRunning()
     renderPage()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark Simmer sauce done early' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Simmer sauce done early' })).toBeInTheDocument())
 
     act(() => {
-      screen.getByRole('button', { name: 'Mark Simmer sauce done early' }).click()
+      screen.getByRole('button', { name: 'Simmer sauce done early' }).click()
     })
 
     expect(mockDismiss).toHaveBeenCalledWith('timer-1')
@@ -1435,6 +1435,52 @@ describe('MealCookPage — Start now is never locked behind a running timer (iss
     await waitFor(() => expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument())
     expect(screen.getByText('Plate up')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument()
+  })
+
+  it('a second tap right after Done early does not land on Start now (tap guard, issue #890)', async () => {
+    seedSimmerRunning()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Simmer sauce done early' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Simmer sauce done early' }).click()
+    })
+    await waitForStepStatus('r-main:1', 'done')
+    // Same step stays the card (upcoming, no longer waiting): Start now now sits
+    // where the finger just was. A double tap must not start Plate up.
+    act(() => {
+      screen.getByRole('button', { name: 'Start now' }).click()
+    })
+    expect(getActiveMealCookSession('meal-1')?.steps['r-main:2']).toBeUndefined()
+  })
+
+  it('the waiting card (nothing to do) offers "<step> done early" for the running timer (issue #890)', async () => {
+    jest.useFakeTimers()
+    seedSimmerRunning()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument())
+    act(() => {
+      screen.getByRole('button', { name: 'Start now' }).click()
+    })
+    await waitForStepStatus('r-main:2', 'running')
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    await waitForStepStatus('r-main:2', 'done')
+    expect(screen.getByTestId('meal-now-card-waiting-copy')).toBeInTheDocument()
+
+    // Clear the card-change tap guard, as a real second elapses.
+    act(() => {
+      jest.advanceTimersByTime(500)
+    })
+    act(() => {
+      screen.getByRole('button', { name: 'Simmer sauce done early' }).click()
+    })
+
+    expect(mockDismiss).toHaveBeenCalledWith('timer-1')
+    await waitForStepStatus('r-main:1', 'done')
+    // Everything is done: the cook is finished without ever reaching the dock x.
+    expect(screen.queryByTestId('meal-now-card')).not.toBeInTheDocument()
   })
 
   it('once the dependency completes, the waiting-on line is gone and Start now is offered', async () => {

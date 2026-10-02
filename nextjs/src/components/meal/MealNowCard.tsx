@@ -41,11 +41,12 @@ export interface MealNowCardProps {
   onSkip: () => void
   onStartEarly: () => void
   /**
-   * Issue #890 — marks the running step this `upcoming` card is waiting on as
-   * done now ("Done early": the oven is ready). Rendered only on a card with
-   * `waiting_on`, and omitted entirely when this prop is left out.
+   * Issue #890 — marks a running hands-off step done now ("Preheat the oven
+   * done early"). Keyed on an `upcoming` card's `waiting_on` step and on each
+   * running step of a `waiting` card; omitted entirely when this prop is left
+   * out.
    */
-  onFinishWaiting?: () => void
+  onFinishRunning?: (step: StreamStep) => void
   disabled?: boolean
   /**
    * Opens the per-dish Ask Bubbles overlay, pinned to this card's dish
@@ -98,6 +99,30 @@ function AskBubblesKey({ onClick, disabled }: { onClick: () => void; disabled: b
   )
 }
 
+/** Issue #890 — finishes a running timer step early, named by that step ("Preheat the oven done early"). */
+function DoneEarlyKey({
+  step,
+  onFinish,
+  disabled,
+}: {
+  step: StreamStep
+  onFinish: (step: StreamStep) => void
+  disabled: boolean
+}) {
+  const name = `${step.label} done early`
+  return (
+    <SpringButton
+      variant="secondary"
+      onClick={() => onFinish(step)}
+      disabled={disabled}
+      aria-label={name}
+      data-testid={`meal-now-card-done-early-${step.key}`}
+    >
+      {name}
+    </SpringButton>
+  )
+}
+
 function DishTag({ step }: { step: StreamStep }) {
   return (
     <span
@@ -116,7 +141,7 @@ export default function MealNowCard({
   onExtend,
   onSkip,
   onStartEarly,
-  onFinishWaiting,
+  onFinishRunning,
   disabled = false,
   onAskBubbles,
   progress,
@@ -143,6 +168,17 @@ export default function MealNowCard({
           <div className="mt-3">
             <MealRunningStrip steps={[...card.running].sort((a, b) => a.end - b.end)} clockLabel={clockLabel} />
           </div>
+          {/* Issue #890: the way out of a running timer is on the card, not
+              only the dock's x — one key per running step, soonest end first. */}
+          {onFinishRunning && (
+            <div className="mt-3 flex flex-wrap gap-2.5">
+              {[...card.running]
+                .sort((a, b) => a.end - b.end)
+                .map((step) => (
+                  <DoneEarlyKey key={step.key} step={step} onFinish={onFinishRunning} disabled={disabled} />
+                ))}
+            </div>
+          )}
         </>
       )}
 
@@ -175,16 +211,8 @@ export default function MealNowCard({
             <SpringButton variant="secondary" onClick={onSkip} disabled={disabled} aria-label="Skip">
               Skip
             </SpringButton>
-            {card.waiting_on && onFinishWaiting && (
-              <SpringButton
-                variant="secondary"
-                onClick={onFinishWaiting}
-                disabled={disabled}
-                aria-label={`Mark ${card.waiting_on.label} done early`}
-                data-testid="meal-now-card-done-early"
-              >
-                Done early
-              </SpringButton>
+            {card.waiting_on && onFinishRunning && (
+              <DoneEarlyKey step={card.waiting_on} onFinish={onFinishRunning} disabled={disabled} />
             )}
             {onAskBubbles && <AskBubblesKey onClick={onAskBubbles} disabled={disabled} />}
           </div>

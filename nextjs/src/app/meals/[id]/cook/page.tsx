@@ -45,6 +45,7 @@ import {
   isMealCookFinished,
   canStartEarly,
   askBubblesStep,
+  type StreamStep,
 } from '@/lib/meal-cook-stream'
 import {
   getActiveMealCookSession,
@@ -488,15 +489,22 @@ export default function MealCookPage() {
   // Issue #890 — "Done early" on the running step the Now card is waiting on
   // (the oven is ready before its timer says so): clears its dock timer and
   // marks it done now, which unblocks its dependents like any other finish.
-  function handleFinishWaiting() {
-    if (!session || !stream || stream.now.kind !== 'upcoming') return
-    const waitingOn = stream.now.waiting_on
-    if (!waitingOn) return
+  // Works on an upcoming card (its `waiting_on` step) and on a waiting card
+  // (each running step). A step that isn't running is ignored.
+  function handleFinishRunning(step: StreamStep) {
+    if (!session || !stream) return
+    if (stream.now.kind !== 'upcoming' && stream.now.kind !== 'waiting') return
+    if (session.steps[step.key]?.status !== 'running') return
     if (tapGuarded()) return
     clearFinishedTimers()
-    const timerId = session.steps[waitingOn.key]?.timer_id
+    const timerId = session.steps[step.key]?.timer_id
     if (timerId) dismissTimer(timerId)
-    updateSession(recordDone(session, waitingOn, nowMinutes))
+    updateSession(recordDone(session, step, nowMinutes))
+    // The card keeps its identity across this (an upcoming card stays the same
+    // step; waiting stays waiting), so the key-change guard never fires: raise
+    // it here so a second tap can't land on whatever key now sits under the
+    // finger (Start now, Ask Bubbles).
+    tapGuardUntilRef.current = Date.now() + 400
   }
 
   function handleStartEarly() {
@@ -892,7 +900,7 @@ export default function MealCookPage() {
               onExtend={handleExtend}
               onSkip={handleSkip}
               onStartEarly={handleStartEarly}
-              onFinishWaiting={handleFinishWaiting}
+              onFinishRunning={handleFinishRunning}
               onAskBubbles={handleAskBubbles}
               progress={dishProgress(allStreamSteps, session.steps)}
               stepIngredients={nowCardIngredients}

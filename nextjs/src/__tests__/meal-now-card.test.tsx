@@ -133,8 +133,8 @@ describe('MealNowCard', () => {
       expect(onSkip).toHaveBeenCalledTimes(1)
     })
 
-    it('offers "Done early" for the running timer when the page wires it, and fires it', () => {
-      const onFinishWaiting = jest.fn()
+    it('offers "<step> done early" for the running timer when the page wires it, and fires it with that step', () => {
+      const onFinishRunning = jest.fn()
       render(
         <MealNowCard
           card={waitingCard}
@@ -143,14 +143,17 @@ describe('MealNowCard', () => {
           onExtend={jest.fn()}
           onSkip={jest.fn()}
           onStartEarly={jest.fn()}
-          onFinishWaiting={onFinishWaiting}
+          onFinishRunning={onFinishRunning}
         />,
       )
-      fireEvent.click(screen.getByRole('button', { name: 'Mark Simmer the sauce done early' }))
-      expect(onFinishWaiting).toHaveBeenCalledTimes(1)
+      const key = screen.getByRole('button', { name: 'Simmer the sauce done early' })
+      // The visible text names the step too, so the aria-label matches it.
+      expect(key).toHaveTextContent('Simmer the sauce done early')
+      fireEvent.click(key)
+      expect(onFinishRunning).toHaveBeenCalledWith(HANDS_OFF_STEP)
     })
 
-    it('omits "Done early" when no handler is wired', () => {
+    it('omits the done-early key when no handler is wired', () => {
       render(
         <MealNowCard
           card={waitingCard}
@@ -199,6 +202,30 @@ describe('MealNowCard', () => {
     )
     expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument()
     expect(screen.queryByTestId('meal-now-card-keeps-running')).not.toBeInTheDocument()
+  })
+
+  it('waiting card: one "<step> done early" key per running step, soonest end first, each firing with its step (issue #890)', () => {
+    const later: StreamStep = { ...HANDS_OFF_STEP, key: 'recipe-2:0', label: 'Roast the beans', end: 30 }
+    const sooner: StreamStep = { ...HANDS_OFF_STEP, end: 18 }
+    const onFinishRunning = jest.fn()
+    render(
+      <MealNowCard
+        card={{ kind: 'waiting', running: [later, sooner] }}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+        onFinishRunning={onFinishRunning}
+      />,
+    )
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Simmer the sauce done early',
+      'Roast the beans done early',
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Roast the beans done early' }))
+    expect(onFinishRunning).toHaveBeenCalledWith(later)
   })
 
   it('shows "Nothing to do right now" and the running steps, soonest end first, with no action pills', () => {
