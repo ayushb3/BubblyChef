@@ -864,20 +864,18 @@ function ChatSurface() {
       {/* Header */}
       <BubblesHeader
         thinking={isStreaming}
-        rightSlot={
-          <div className="flex items-center gap-2">
-            {hasMessages && (
-              <button
-                type="button"
-                onClick={handleNewChat}
-                className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
-              >
-                New Chat
-              </button>
-            )}
-            <ProfileHeaderButton />
-          </div>
+        leadingSlot={
+          hasMessages && (
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
+            >
+              New Chat
+            </button>
+          )
         }
+        rightSlot={<ProfileHeaderButton />}
       />
 
       {/* AI unavailable warning */}

@@ -12,7 +12,9 @@ import NotificationBell from '@/components/layout/NotificationBell'
  * Contract for the hosts:
  *  - The title is fixed at "BubblyChef" (the `h1`). A page's own heading goes in
  *    its body, not here.
- *  - `rightSlot`: the page's controls, laid out next to the notification bell.
+ *  - `leadingSlot`: page controls that sit before the notification bell (chat's
+ *    New Chat, issue #906).
+ *  - `rightSlot`: the page's controls, laid out after the notification bell.
  *  - `thinking`: Bubbly shows the thinking pose (chat while a reply streams).
  *    Otherwise the cheerful pose, resting with a gentle bob.
  *  - Tapping Bubbly plays a short mirror-flip, `REACTION_MS` long. A real button
@@ -26,6 +28,7 @@ import NotificationBell from '@/components/layout/NotificationBell'
 
 interface BubblesHeaderProps {
   showSubtitle?: boolean
+  leadingSlot?: React.ReactNode
   rightSlot?: React.ReactNode
   thinking?: boolean
 }
@@ -37,6 +40,7 @@ const REACTION_FLIP_MS = 150
 
 export default function BubblesHeader({
   showSubtitle = false,
+  leadingSlot,
   rightSlot,
   thinking = false,
 }: BubblesHeaderProps) {
@@ -92,6 +96,7 @@ export default function BubblesHeader({
           at, and every caller that passes a `rightSlot` (usually
           `ProfileHeaderButton`) gets the bell next to it for free.
         */}
+        {leadingSlot}
         <NotificationBell />
         {rightSlot}
       </div>
