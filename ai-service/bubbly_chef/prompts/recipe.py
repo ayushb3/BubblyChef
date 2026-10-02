@@ -300,7 +300,11 @@ Generate a full recipe with:
     "duration_minutes" (whole minutes, 1-240; omit only if genuinely unknown),
     "hands_on" (true if the cook must be actively engaged for this step),
     "depends_on" (indices of earlier steps that must finish first; omit for
-      "just the previous step", use [] for "can start at the beginning"),
+      "just the previous step", use [] for "can start at the beginning".
+      A hands-off wait like "Preheat the oven" is a prerequisite of only the
+      steps that need it (the roast), so prep that can happen meanwhile
+      (chopping, seasoning) depends on what it really uses, not on the step
+      before it),
     "exclusive" (kitchen-limit tags this step needs, usually [])
   Do not repeat the instruction text inside a steps entry — that comes from
   "instructions" at the same index.
@@ -595,7 +599,10 @@ For each instruction above, in the same order, return one steps entry with:
 false if it's mostly waiting (simmering, baking, resting, marinating)
 - "depends_on": indices (0-based) of earlier steps in THIS list that must \
 finish before this one can start; omit for "just the previous step", use \
-[] for "can start at the beginning"
+[] for "can start at the beginning". A hands-off wait like "Preheat the \
+oven" is a prerequisite of only the steps that need it (the roast), so prep \
+that can happen meanwhile (chopping, seasoning) depends on what it really \
+uses, not on the step before it
 - "exclusive": kitchen-limit tags this step needs (e.g. "pan", "oven"), \
 usually []
 
