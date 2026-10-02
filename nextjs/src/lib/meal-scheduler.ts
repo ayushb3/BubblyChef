@@ -281,7 +281,13 @@ function sanitizeDependsOn(steps: Pick<Step, 'depends_on' | 'text' | 'label'>[])
  * that only keeps a step behind the preheat, the safe direction.
  */
 const PREHEAT_LEAD_RE =
-  /^\W*(?:pre-?heat|heat(?:\s+up)?)\s+(?:(?:the|your|an?|my)\s+)?(?:\w+\s+)?(oven|broiler|griddle|grill(?!\s+pan)|air[- ]?fryer)\b/i
+  /^\W*(?:pre-?heat|heat(?:\s+up)?)\s+(?:(?:the|your|an?|my)\s+)?(?:(?!dutch\b)\w+\s+)?(oven(?![\s-]*(?:safe|proof)\b|\s+(?:mitts?|gloves?|racks?|trays?))|broiler|griddle|grill(?!\s+pan)|air[- ]?fryer)\b/i
+/**
+ * Cookware that merely has "oven" in its name (a Dutch oven is a pot, as
+ * `kitchen_limits.py` also maps it; "oven-safe" describes a pan): never the
+ * appliance, so stripped before an oven-use step is recognised.
+ */
+const COOKWARE_RE = /\bdutch\s+oven\b|\boven[\s-]*(?:safe|proof)\b|\boven\s+(?:mitts?|gloves?|racks?|trays?)\b/gi
 const APPLIANCES: { named: RegExp; users: RegExp }[] = [
   { named: /^oven$/i, users: /\b(?:oven|bake[sd]?|roast\w*|broil\w*)\b/i },
   { named: /^broiler$/i, users: /\b(?:oven|broil\w*)\b/i },
@@ -344,7 +350,7 @@ function relaxPreheatDependencies(
       depsByIndex[i] = []
       return
     }
-    const text = stepText(step).replace(EQUIPMENT_RE, '').replace(WAIT_CLAUSE_RE, '')
+    const text = stepText(step).replace(COOKWARE_RE, '').replace(EQUIPMENT_RE, '').replace(WAIT_CLAUSE_RE, '')
     const deps = new Set<number>()
     for (const d of original[i]) resolve(d).forEach((r) => deps.add(r))
     for (const [p, users] of usersByPreheat) {

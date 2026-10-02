@@ -260,6 +260,43 @@ describe('only a step that IS a preheat is treated as one (issue #891 review)', 
     expect(sanitizedDependencyKeys([dish], 'd', 2)).toEqual(['d:1'])
   })
 
+  it('cookware is not the oven: "Heat a Dutch oven" / "an oven-safe skillet" / "an ovenproof dish" are not preheats', () => {
+    for (const text of [
+      'Heat a Dutch oven over medium heat.',
+      'Heat an oven-safe skillet over high heat.',
+      'Heat the oven-proof dish on the stove.',
+      'Heat an ovenproof pan over medium heat.',
+    ]) {
+      const dish = dishOf([prep(text, text.replace(/\.$/, ''), [], true, 3), prep('Brown the beef.', 'Brown the beef', [0])])
+      expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual(['d:0'])
+      const tl = scheduleMeal({ dishes: [dish] })
+      expect(tl.placements.find((x) => x.step_index === 0)!.hands_on).toBe(true)
+      expect(tl.placements.find((x) => x.step_index === 1)!.start).toBeGreaterThanOrEqual(
+        tl.placements.find((x) => x.step_index === 0)!.end,
+      )
+    }
+  })
+
+  it('a step using a Dutch oven or an oven-safe pan does not depend on the real oven preheat', () => {
+    for (const text of ['Brown the beef in the Dutch oven.', 'Brown the beef in an oven-safe skillet.']) {
+      const dish = dishOf([
+        prep('Preheat the oven to 180C.', 'Preheat the oven', [], false, 10),
+        prep(text, 'Brown the beef', [0]),
+      ])
+      expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual([])
+    }
+  })
+
+  it('but baking in a Dutch oven still needs the oven', () => {
+    const dish = dishOf([
+      prep('Preheat the oven to 230C.', 'Preheat the oven', [], false, 10),
+      prep('Shape the dough.', 'Shape the dough', [0]),
+      prep('Bake the bread in the Dutch oven for 30 minutes.', 'Bake the bread', [1], false, 30),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual([])
+    expect(sanitizedDependencyKeys([dish], 'd', 2)).toEqual(['d:0', 'd:1'])
+  })
+
   it('recognises the imperative in the title or the text, in the usual wordings', () => {
     for (const [label, text] of [
       ['Preheat the oven', 'Set it to 220C.'],
