@@ -13,7 +13,7 @@
  * request instead: home screen's Plan card → `planDinnerHref()`. A fourth,
  * `/chat?meal=<recipe id>&title=<title>` (issue #651 PR B), seeds "make this
  * saved recipe into a meal": recipe page → `makeMealHref()`. Precedence
- * across every seed source is cooking > meal > plan > tip > use — the
+ * across every seed source is cooking > meal > plan > suggest > ask > tip > use — the
  * cooking handoff is excluded before `deriveChatSeed` is ever called
  * (`page.tsx`), `meal` is checked first inside it, and `plan` ahead of
  * `tip`/`use`. A `meal` value that isn't a UUID is ignored.
@@ -76,7 +76,7 @@ export interface ReadableSearchParams {
 }
 
 /** `meal` is the make-it-a-meal seed (issue #651 PR B). */
-export type ChatSeedKind = 'tip' | 'use' | 'plan' | 'meal' | 'ask'
+export type ChatSeedKind = 'tip' | 'use' | 'plan' | 'meal' | 'ask' | 'suggest'
 
 export interface ChatSeedCard {
   emoji: string
@@ -157,6 +157,15 @@ export function planDinnerHref(foods?: readonly string[]): string {
 }
 
 /**
+ * The "You haven't cooked in a while" inbox nudge (issue #905) → a new chat that
+ * asks for a suggestion. Tapping a nudge that asks "want a suggestion?" is the
+ * consent for the one AI call.
+ */
+export function suggestHref(): string {
+  return '/chat?suggest=1'
+}
+
+/**
  * A starter pill as a link (issue #755): the Bubbles card's pills that have no
  * dedicated seed above send the text a tap on the pill inside the chat would.
  */
@@ -187,6 +196,9 @@ export function makeMealMessage(title?: string | null): string {
 
 /** Auto-sent message for the `?plan=dinner` seed (issue #651). */
 export const PLAN_DINNER_MESSAGE = 'Plan dinner for tonight'
+
+/** Auto-sent message for the `?suggest=1` seed (issue #905). */
+export const SUGGEST_MESSAGE = "I haven't cooked in a while. What should I make today?"
 
 /** "A", "A and B", "A, B and C". */
 function joinFoods(foods: readonly string[]): string {
@@ -314,6 +326,23 @@ export function deriveChatSeed(
         subtitle:
           foods.length > 0 ? `Using your ${joinFoods(foods)}` : 'Bubbly will suggest a few meals',
         dismissLabel: 'Dismiss dinner planning context',
+      },
+    }
+  }
+
+  // The cook nudge (issue #905): only the exact value "1" qualifies. After plan,
+  // ahead of ask/tip/use.
+  if (param(params, 'suggest') === '1') {
+    return {
+      key: 'suggest',
+      kind: 'suggest',
+      message: SUGGEST_MESSAGE,
+      card: {
+        emoji: '🍳',
+        label: 'Time to cook',
+        title: 'Finding something to cook',
+        subtitle: 'Bubbly will look at your pantry',
+        dismissLabel: 'Dismiss cooking suggestion context',
       },
     }
   }

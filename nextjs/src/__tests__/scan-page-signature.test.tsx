@@ -37,11 +37,13 @@ beforeEach(() => {
 })
 
 describe('/scan signature restyle', () => {
-  it('has the shared page header (#894): BubblyChef, with Cancel back to the kitchen, and its own heading below', () => {
+  it('has the shared page header (#894): BubblyChef, the Recipes tab\'s profile button and no Cancel (#905), and its own heading below', () => {
     renderPage()
     expect(screen.getByRole('heading', { level: 1, name: 'BubblyChef' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Scan a receipt' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
+    expect(screen.queryByRole('link', { name: 'Cancel' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
   })
 
   it('draws the dropzone as a pixel panel with a Choose a photo keycap, no dashed border', () => {
