@@ -6,10 +6,17 @@ import { motion, AnimatePresence } from 'framer-motion'
 interface RecipeSearchBarProps {
   onSearch: (query: string) => void
   isSearching?: boolean
+  /** Text to start with, so a tab that remounts picks up where it left off (#904). */
+  initialValue?: string
+  placeholder?: string
 }
 
-export default function RecipeSearchBar({ onSearch }: RecipeSearchBarProps) {
-  const [value, setValue] = useState('')
+export default function RecipeSearchBar({
+  onSearch,
+  initialValue = '',
+  placeholder = 'Search your recipes...',
+}: RecipeSearchBarProps) {
+  const [value, setValue] = useState(initialValue)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -28,7 +35,7 @@ export default function RecipeSearchBar({ onSearch }: RecipeSearchBarProps) {
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Search your recipes..."
+        placeholder={placeholder}
         className="w-full py-2.5 pl-4 pr-10 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-accent)] transition-colors text-sm font-[Nunito,sans-serif]"
       />
 
