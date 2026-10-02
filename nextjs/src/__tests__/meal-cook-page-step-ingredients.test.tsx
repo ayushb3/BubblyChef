@@ -269,7 +269,7 @@ describe('MealCookPage — Ingredients sheet (issue #849)', () => {
     const sheet = await screen.findByTestId('meal-ingredients-sheet')
     expect(sheet).toHaveTextContent('Pasta dinner')
     expect(sheet).toHaveTextContent('400 g pasta')
-    expect(sheet).toHaveTextContent('2 cup sauce')
+    expect(sheet).toHaveTextContent('2 cups sauce')
     expect(sheet).toHaveTextContent('2 tsp salt')
 
     const box = screen.getByRole('checkbox', { name: /400 g pasta/ })
@@ -281,7 +281,7 @@ describe('MealCookPage — Ingredients sheet (issue #849)', () => {
     await waitFor(() => expect(screen.queryByTestId('meal-ingredients-sheet')).not.toBeInTheDocument())
     fireEvent.click(screen.getByTestId('meal-cook-ingredients-button'))
     expect(await screen.findByRole('checkbox', { name: /400 g pasta/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /2 cup sauce/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /2 cups sauce/ })).not.toBeChecked()
   })
 })
 

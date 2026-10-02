@@ -65,14 +65,14 @@ describe('cook step chips (issue #892)', () => {
   it("keeps the recipe's own unit", () => {
     const labels = chipLabels(2, 2)
     expect(labels).toEqual(
-      expect.arrayContaining(['0.25 teaspoon Paprika', '1 pinch Salt', '2 tablespoon Honey']),
+      expect.arrayContaining(['¼ tsp Paprika', '1 pinch Salt', '2 tbsp Honey']),
     )
   })
 
   it('a real count survives, including half an onion', () => {
     const labels = chipLabels(2, 2)
-    expect(labels).toContain('0.5 count Onion')
-    expect(labels).toContain('6 count Carrots')
+    expect(labels).toContain('½ Onion')
+    expect(labels).toContain('6 Carrots')
   })
 
   it('scaling up a to-taste spice does not turn it back into a count', () => {
@@ -96,19 +96,19 @@ describe('other display paths (issue #892 sweep)', () => {
     const cinnamon = { name: 'Cinnamon', quantity: 0.25, unit: 'count' }
     expect(ingredientLabel(cinnamon)).toBe('Cinnamon, to taste')
     expect(ingredientParts(cinnamon)).toMatchObject({ name: 'Cinnamon', quantityText: 'to taste' })
-    expect(ingredientLabel({ name: 'Cinnamon', quantity: 0.25, unit: 'tsp' })).toBe('0.25 tsp Cinnamon')
-    expect(ingredientLabel({ name: 'Onion', quantity: 0.5, unit: 'count' })).toBe('0.5 count Onion')
+    expect(ingredientLabel({ name: 'Cinnamon', quantity: 0.25, unit: 'tsp' })).toBe('¼ tsp Cinnamon')
+    expect(ingredientLabel({ name: 'Onion', quantity: 0.5, unit: 'count' })).toBe('½ Onion')
   })
 
   it('a flattened recipe text row', () => {
     expect(ingredientLabel('0.25 count Cinnamon')).toBe('Cinnamon, to taste')
-    expect(ingredientLabel('0.5 count onion')).toBe('0.5 count onion')
+    expect(ingredientLabel('0.5 count onion')).toBe('½ onion')
     expect(ingredientLabel('2 tbsp butter')).toBe('2 tbsp butter')
   })
 
   it('the meal page, scaled for the meal servings', () => {
     expect(scaledIngredientLabel({ name: 'Cumin', quantity: 0.25, unit: 'count' }, 2)).toBe('Cumin, to taste')
-    expect(scaledIngredientLabel({ name: 'Cumin', quantity: 0.25, unit: 'tsp' }, 2)).toBe('0.5 tsp Cumin')
+    expect(scaledIngredientLabel({ name: 'Cumin', quantity: 0.25, unit: 'tsp' }, 2)).toBe('½ tsp Cumin')
   })
 
   it('a recipe-derived to-buy item from the service drops a spice count', async () => {

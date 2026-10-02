@@ -14,11 +14,11 @@ describe('scaledIngredientLabel', () => {
 
   it('rounds to 2 decimals and trims trailing zeros', () => {
     expect(scaledIngredientLabel({ name: 'butter', quantity: 1, unit: 'tbsp' }, 1.5)).toBe(
-      '1.5 tbsp butter',
+      '1½ tbsp butter',
     )
-    // 1/3 of 1 = 0.333... -> rounds to 0.33
+    // 1/3 of 1 = 0.333... -> rounds to 0.33, which reads as the glyph ⅓
     expect(scaledIngredientLabel({ name: 'flour', quantity: 1, unit: 'cup' }, 1 / 3)).toBe(
-      '0.33 cup flour',
+      '⅓ cup flour',
     )
   })
 
