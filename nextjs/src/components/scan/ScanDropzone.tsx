@@ -58,7 +58,7 @@ export default function ScanDropzone({
         {isDragActive ? 'Drop it here!' : 'Drop your receipt here'}
       </p>
       <p className="text-sm text-[var(--color-muted)] mb-4">
-        Bubbles reads the items; nothing goes in until you say so.
+        Bubbly reads the items; nothing goes in until you say so.
       </p>
       <SpringButton variant={hasError ? 'secondary' : 'primary'} fullWidth onClick={onChoose}>
         Choose a photo
@@ -91,7 +91,7 @@ export function ScanProcessingPanel({
         <PixelDots />
         <p className="font-extrabold">Scanning receipt…</p>
       </div>
-      <p className="text-sm text-[var(--color-muted)] mt-2">Bubbles is reading your items</p>
+      <p className="text-sm text-[var(--color-muted)] mt-2">Bubbly is reading your items</p>
       <div className="mt-4 flex justify-center">
         <SpringButton variant="secondary" size="sm" onClick={onCancel}>
           Cancel scan

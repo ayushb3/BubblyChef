@@ -2622,7 +2622,7 @@ async def run_chat_workflow_streaming(
 
     if intent == Intent.COOKING_HELP.value:
         system = (
-            "You are a friendly cooking assistant for BubblyChef, "
+            "You are Bubbly, a friendly cooking assistant for BubblyChef, "
             "a pantry-aware recipe app.\n\n"
             "Help the user with:\n"
             "- Cooking techniques and how-to questions\n"

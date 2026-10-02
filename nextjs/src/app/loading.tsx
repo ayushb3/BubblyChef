@@ -25,7 +25,7 @@ export default function Loading() {
         <BubblesMascot state="thinking" size={36} />
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-extrabold text-[var(--color-text)] leading-tight">
-            Bubbles
+            BubblyChef
           </h1>
           <p className="text-xs text-[var(--color-muted)]">Warming up the kitchen…</p>
         </div>

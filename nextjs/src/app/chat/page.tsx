@@ -13,6 +13,7 @@ import PostMessageChips from '@/components/chat/PostMessageChips'
 import CookingContextCard from '@/components/chat/CookingContextCard'
 import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
+import MealOpenWaitingCard from '@/components/chat/MealOpenWaitingCard'
 import RecipeCard, { compactPropsFromProposal, compactPropsFromSavedMeal } from '@/components/recipes/RecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
@@ -247,6 +248,11 @@ function ChatSurface() {
    * writes nothing; the card's button is still the one confirm.
    */
   const [mealSaveFocus, setMealSaveFocus] = useState<Record<string, number>>({})
+  // The option a meal-option tap picked, and the id of the message it was tapped
+  // on (issue #887): the waiting card shows only for the turn that directly
+  // follows that message and carries the option's title. Cleared on new chat, on
+  // dismissing a failed send, and once the turn settles.
+  const [pickedOption, setPickedOption] = useState<{ option: MealOption; afterId: string } | null>(null)
   /** In-flight POST promises keyed by msgId — the double-creation guard Open and Save share. */
   const mealCreateInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
@@ -388,7 +394,7 @@ function ChatSurface() {
   }
 
   // Auto-send the seeded question so a tap on the dashboard tip / an expiring
-  // item lands straight on Bubbles' answer — the tap on the card is the "1 tap"
+  // item lands straight on Bubbly's answer — the tap on the card is the "1 tap"
   // both #138 acceptance criteria budget for. The seed rides in the message
   // *text*, not a context payload: the AI service only honours `cooking_recipe`
   // as client context, and the must-use ingredient is recovered by an LLM pass
@@ -490,12 +496,10 @@ function ChatSurface() {
     }
     // Fresh empty state, fresh clock read for the starter-pill ranker.
     setMountedAt(new Date())
+    setPickedOption(null)
     startNewChat()
   }
 
-
-  // Mascot state
-  const mascotState = isStreaming ? 'thinking' : 'happy'
 
   const handleSend = () => {
     const text = input.trim()
@@ -632,6 +636,10 @@ function ChatSurface() {
    * fuzzy-matched from the title text (contract: "Pick: the request").
    */
   const handlePickMealOption = (option: MealOption) => {
+    // Remember which option this turn picked, and where its user message will
+    // sit, so the wait can name it (issue #887). Nothing else is sent or fetched.
+    const last = messages[messages.length - 1]
+    setPickedOption(last ? { option, afterId: last.id } : null)
     sendMessage(option.title, { meal_option_id: option.option_id })
   }
 
@@ -762,6 +770,7 @@ function ChatSurface() {
         // The unsent text goes back in the input (#847), unless the user has
         // already started typing something else there.
         const text = dismissFailedSend(msgId)
+        setPickedOption(null)
         if (text) setInput((prev) => prev || text)
         inputRef.current?.focus()
         break
@@ -813,6 +822,26 @@ function ChatSurface() {
   const showTypingIndicator =
     isStreaming && lastMsg?.role === 'assistant' && !lastMsg.content
 
+  // The reply to a meal-option tap is the one being waited on: the pick's user
+  // turn (the one right after the message it was tapped on, with the option's
+  // title) followed by the empty assistant turn that is the last message.
+  const pickAt = pickedOption ? messages.findIndex((m) => m.id === pickedOption.afterId) : -1
+  // A pick is spent once its turn has settled, or when the message it was tapped
+  // on is gone (new chat, a restored thread). React's adjust-state-while-rendering
+  // pattern, so no stale pick can outlive its turn.
+  if (pickedOption && (pickAt < 0 || (!isStreaming && messages.length >= pickAt + 3))) {
+    setPickedOption(null)
+  }
+  const pickTurn = pickedOption && pickAt >= 0 ? messages[pickAt + 1] : undefined
+  const waitingOption =
+    showTypingIndicator &&
+    pickedOption &&
+    pickTurn?.role === 'user' &&
+    pickTurn.content === pickedOption.option.title &&
+    messages.length === pickAt + 3
+      ? pickedOption.option
+      : null
+
   const hasMessages = messages.length > 0
 
   // Anchor a sent message to the top and let the reply stream in below it, rather
@@ -838,8 +867,7 @@ function ChatSurface() {
     <div className={`flex flex-col ${CHAT_VIEWPORT_CLASS}`}>
       {/* Header */}
       <BubblesHeader
-        mascotState={mascotState}
-        mascotAnimate={isStreaming}
+        thinking={isStreaming}
         rightSlot={
           <div className="flex items-center gap-2">
             {hasMessages && (
@@ -861,14 +889,14 @@ function ChatSurface() {
         <div className="mx-4 mt-3 px-4 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex items-center gap-2 text-sm">
           <span>💤</span>
           <span className="text-[var(--color-text)]">
-            Bubbles is taking a break — chat will be back soon. Your pantry and recipes still work.
+            Bubbly is taking a break — chat will be back soon. Your pantry and recipes still work.
           </span>
         </div>
       )}
 
       {/* Cook handoff context — pinned above the thread rather than scrolling
           with it. While a recipe is pinned, cooking *is* the task of this
-          screen, and the banner is the only on-screen confirmation that Bubbles
+          screen, and the banner is the only on-screen confirmation that Bubbly
           knows which recipe you mean; inside the scroll area it disappeared
           after a couple of turns (#242). */}
       <AnimatePresence>
@@ -1023,7 +1051,16 @@ function ChatSurface() {
             ))}
 
             <AnimatePresence>
-              {showTypingIndicator && <TypingIndicator />}
+              {showTypingIndicator &&
+                (waitingOption ? (
+                  <MealOpenWaitingCard
+                    key="meal-open-waiting"
+                    title={waitingOption.title}
+                    dishes={waitingOption.dishes.map((d) => d.name)}
+                  />
+                ) : (
+                  <TypingIndicator key="typing" />
+                ))}
             </AnimatePresence>
           </div>
           {/* Blank room under the thread so a sent message can scroll to the top
@@ -1040,9 +1077,9 @@ function ChatSurface() {
           >
             <EmptyState
               mascotState="happy"
-              headerLabel="Chef Bubbly"
+              headerLabel="Bubbly"
               headerVariant="chat"
-              headline={cookingRecipe ? 'Cooking with Bubbles' : 'Chat with Bubbles'}
+              headline={cookingRecipe ? 'Cooking with Bubbly' : 'Chat with Bubbly'}
               subline={
                 cookingRecipe
                   ? 'Ask me anything about this recipe!'
@@ -1107,7 +1144,7 @@ function ChatSurface() {
             // sendMessage returns early when isStreaming (useChat), and the Send
             // button is replaced by Stop below — so typing cannot interleave two
             // requests.
-            aria-label="Message Bubbles"
+            aria-label="Message Bubbly"
             className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:border-[var(--color-accent)] text-sm"
           />
           {/* Placeholder hides once anything is typed; no longer tied to streaming,

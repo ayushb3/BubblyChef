@@ -212,7 +212,7 @@ describe('kitchen home wall (#748)', () => {
 
     expect(container.querySelector('[data-tour="quick-actions"]')).toBeNull()
     // The one illustrated Bubbles left is the small one on the Bubbles card.
-    expect(screen.getAllByAltText(/^Bubbles /)).toHaveLength(1)
+    expect(screen.getAllByAltText(/^Bubbly /)).toHaveLength(1)
   })
 })
 

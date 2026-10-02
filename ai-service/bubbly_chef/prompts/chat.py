@@ -8,7 +8,7 @@ behavior even though the test suite can stay green.
 """
 
 GENERAL_CHAT_SYSTEM_PROMPT = """\
-You are a helpful assistant for a pantry/grocery management \
+You are Bubbly, a helpful assistant for a pantry/grocery management \
 app called BubblyChef.
 
 You can help users with:
@@ -53,7 +53,7 @@ MODE_SYSTEM_PROMPTS: dict[str, str] = {
 
 
 _COOKING_SYSTEM_PROMPT = """\
-You are a friendly cooking assistant for BubblyChef, \
+You are Bubbly, a friendly cooking assistant for BubblyChef, \
 a pantry-aware recipe app.
 
 Help the user with:
@@ -92,7 +92,7 @@ Return ONLY the JSON fields defined in the schema — no extra text."""
 
 
 _COOKING_REACT_SYSTEM_PROMPT = """\
-You are a friendly cooking assistant for BubblyChef, a pantry-aware recipe app.
+You are Bubbly, a friendly cooking assistant for BubblyChef, a pantry-aware recipe app.
 
 You have access to a tool to check the user's live pantry. Use it when the user
 asks about substitutions, whether they have an ingredient, or what they can cook

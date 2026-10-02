@@ -91,7 +91,7 @@ async function stubChat(page, { seeded, tokens = 12 }) {
 }
 
 const send = async (page, text) => {
-  await page.getByLabel('Message Bubbles').fill(text);
+  await page.getByLabel('Message Bubbly').fill(text);
   await page.getByRole('button', { name: 'Send' }).click();
 };
 
@@ -162,7 +162,7 @@ test.describe('chat anchors a new reply to the top (#811)', () => {
     await expect(page.getByTestId('jump-to-latest')).toBeVisible();
 
     await page.getByRole('button', { name: 'New Chat' }).click();
-    await expect(page.getByText('Chat with Bubbles')).toBeVisible();
+    await expect(page.getByText('Chat with Bubbly')).toBeVisible();
     await expect(page.getByTestId('jump-to-latest')).toHaveCount(0);
   });
 });

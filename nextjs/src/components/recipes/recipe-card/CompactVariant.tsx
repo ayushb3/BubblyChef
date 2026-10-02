@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 import SpringButton from '@/components/ui/SpringButton'
 import { useMotionConfig } from '@/lib/motion'
 import { CARD_FRAME, CARD_KEY_SHADOW, ChevronIcon, ExpiringBadge, KEY_LAYOUT, TITLE_FONT } from './parts'
@@ -129,7 +130,14 @@ export default function CompactVariant({
   const opening = openState !== 'idle'
   const trailing =
     openState === 'pending' ? (
-      <span className="shrink-0 text-xs font-extrabold">Opening…</span>
+      // The flip-book Bubbles beside the word (issue #887); the button's own
+      // aria-label already says "Opening…", so the image is decorative here.
+      <span className="flex shrink-0 items-center gap-1 text-xs font-extrabold">
+        <span aria-hidden="true">
+          <BubblesMascot state="thinking" size={32} />
+        </span>
+        Opening…
+      </span>
     ) : openState === 'opened' ? (
       <span className="shrink-0 text-xs font-extrabold">✓ Opened</span>
     ) : (

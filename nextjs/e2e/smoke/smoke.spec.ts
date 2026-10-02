@@ -30,7 +30,7 @@ test.describe('smoke — navigation', () => {
     // The dashboard renders Bubbles more than once (nav avatar + hero), so scope
     // this to the first match — the assertion is "the dashboard mounted", not
     // "there is exactly one mascot".
-    await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
+    await expect(page.getByAltText(/Bubbly/).first()).toBeVisible();
 
     // (b) The pantry loads through the kitchen (the Pantry tab went, #750): tap
     // the fridge, flip to List. The "Add to the fridge" key is present
@@ -148,7 +148,7 @@ async function sendChatMessageAndExpectRealReply(
 ): Promise<void> {
   await page.goto('/chat');
 
-  const input = page.getByLabel('Message Bubbles');
+  const input = page.getByLabel('Message Bubbly');
   await expect(input).toBeVisible({ timeout: 10_000 });
   await input.fill('What can I make with pasta?');
 

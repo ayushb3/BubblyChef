@@ -572,10 +572,10 @@ export default function GuidedCookFlow({
                         setChatOpen(true)
                         setChatPresent(true)
                       }}
-                      aria-label="Ask Bubbles about this step"
+                      aria-label="Ask Bubbly about this step"
                       data-testid="guided-cook-ask-bubbles"
                     >
-                      💬 Ask Bubbles
+                      💬 Ask Bubbly
                     </SpringButton>
                   </div>
                 </PixelPanel>

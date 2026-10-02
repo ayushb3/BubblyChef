@@ -107,9 +107,9 @@ describe('MessageBubble', () => {
 })
 
 describe('TypingIndicator', () => {
-  it('announces that Bubbles is typing, with three decorative pixel dots', () => {
+  it('announces that Bubbly is typing, with three decorative pixel dots', () => {
     render(<TypingIndicator />)
-    expect(screen.getByRole('status')).toHaveTextContent('Bubbles is typing')
+    expect(screen.getByRole('status')).toHaveTextContent('Bubbly is typing')
     expect(screen.getAllByTestId('typing-dot')).toHaveLength(3)
   })
 })

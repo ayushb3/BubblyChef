@@ -359,7 +359,7 @@ describe('a reload in the middle of the cook (#490)', () => {
     renderChat()
     await screen.findByText(/3 ingredients/i)
 
-    fireEvent.change(screen.getByLabelText(/message bubbles/i), { target: { value: 'also swap parsley' } })
+    fireEvent.change(screen.getByLabelText(/message bubbly/i), { target: { value: 'also swap parsley' } })
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
@@ -374,7 +374,7 @@ describe('the cook context on the first message', () => {
     hook = { messages: [], amendmentStates: {}, amendmentErrors: {} }
     renderChat()
     await screen.findByText(/2 ingredients/i)
-    fireEvent.change(screen.getByLabelText(/message bubbles/i), { target: { value: 'no cream' } })
+    fireEvent.change(screen.getByLabelText(/message bubbly/i), { target: { value: 'no cream' } })
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
     const context = sendMessage.mock.calls[0][1] as { cooking_recipe: { id: string; title: string } }
     expect(context.cooking_recipe.id).toBe('r1')
@@ -385,7 +385,7 @@ describe('the cook context on the first message', () => {
     hook = { messages: [], amendmentStates: {}, amendmentErrors: {} }
     fetchRecipe.mockReturnValue(new Promise(() => {}))
     renderChat()
-    fireEvent.change(screen.getByLabelText(/message bubbles/i), { target: { value: 'no cream' } })
+    fireEvent.change(screen.getByLabelText(/message bubbly/i), { target: { value: 'no cream' } })
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
     expect(sendMessage.mock.calls[0][1]).toEqual({ cooking_recipe_id: 'r1' })
   })

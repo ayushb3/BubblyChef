@@ -1,6 +1,6 @@
 /**
  * Issue #743 — the remaining overlays (recipe edit / import / refine, the kitchen
- * theme picker, Ask Bubbles, the tour shell) sit on PixelSheet, so every sheet
+ * theme picker, Ask Bubbly, the tour shell) sit on PixelSheet, so every sheet
  * frames, traps focus and closes the same way.
  *
  * Behaviour only: each sheet opens as a dialog with the sheet's handle and close
@@ -172,7 +172,7 @@ describe('AskBubblesOverlay on PixelSheet', () => {
     const onClose = jest.fn()
     render(<AskBubblesOverlay stepN={2} stepText="Stir" recipeTitle="Pasta" onClose={onClose} />)
     expectSheetChrome()
-    const dialog = screen.getByRole('dialog', { name: 'Ask Bubbles about step 2' })
+    const dialog = screen.getByRole('dialog', { name: 'Ask Bubbly about step 2' })
     // The cook surface is z-9990; the sheet must sit above it.
     expect(dialog.parentElement!.className).toContain('z-[9998]')
     expect(screen.getByText('Asking about step 2')).toBeInTheDocument()

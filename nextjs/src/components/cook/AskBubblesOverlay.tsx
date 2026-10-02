@@ -175,7 +175,7 @@ function AmendmentCard({
         data-testid="ask-bubbles-amendment-card"
       >
         <p className="font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
-          {amendment.changeSummary || 'Bubbles suggests changing the ingredients'}
+          {amendment.changeSummary || 'Bubbly suggests changing the ingredients'}
         </p>
         {isLatest && (
           <div className="flex gap-2">
@@ -396,8 +396,8 @@ export default function AskBubblesOverlay({
       open
       onClose={onClose}
       layer="cook"
-      title="Ask Bubbles"
-      ariaLabel={`Ask Bubbles about step ${stepN}`}
+      title="Ask Bubbly"
+      ariaLabel={`Ask Bubbly about step ${stepN}`}
       subtitle={pinned ? `Asking about ${pinned.title}` : `Asking about step ${stepN}`}
       footer={
         <>
@@ -469,7 +469,7 @@ export default function AskBubblesOverlay({
             className="font-sans text-sm text-center py-4"
             style={{ color: 'var(--color-muted)' }}
           >
-            Ask Bubbles anything about this step!
+            Ask Bubbly anything about this step!
           </p>
         )}
         {messages.map((m, i) => (

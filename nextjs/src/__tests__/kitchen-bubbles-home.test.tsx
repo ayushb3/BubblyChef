@@ -139,7 +139,7 @@ describe('Bubbles on the kitchen home (#752)', () => {
     mockFetch([fresh])
     renderHome()
     await loaded()
-    const group = screen.getByRole('group', { name: /Bubbles is at the stove, cooking/ })
+    const group = screen.getByRole('group', { name: /Bubbly is at the stove, cooking/ })
     expect(group).toBe(screen.getByTestId('kitchen-wall'))
     // the sprite itself is hidden from assistive tech: nothing to tab to or announce
     expect(bubbles().closest('[aria-hidden="true"]')).not.toBeNull()

@@ -41,7 +41,7 @@ describe('DinnerInput', () => {
   it('the button submits too, once per tap', () => {
     render(<DinnerInput />)
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'pasta' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask Bubbles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Bubbly' }))
     expect(push).toHaveBeenCalledTimes(1)
     expect(push.mock.calls[0][0]).toBe('/chat?ask=pasta')
   })

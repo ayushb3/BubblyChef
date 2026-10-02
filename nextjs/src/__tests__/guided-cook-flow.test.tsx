@@ -9,7 +9,7 @@
  *  - Progress dots advance with step idx
  *  - Final "Finish cooking" lands on done-state
  *  - Done-state "Back to recipe" fires onExit
- *  - "Ask Bubbles" button opens the overlay (dialog rendered)
+ *  - "Ask Bubbly" button opens the overlay (dialog rendered)
  *  - Overlay close button dismisses and returns to same step
  *  - Empty instructions shows done-state immediately
  *  - Structured steps (issue #648): structured chips, hands-on duration
@@ -34,6 +34,8 @@ jest.mock('framer-motion', () => ({
 }))
 
 jest.mock('@/lib/motion', () => ({
+  // BubblesMascot's thinking flip-book (#887) reads this; a fixed frame keeps these tests timer-free.
+  useSteppedFrame: () => 0,
   useMotionConfig: () => ({
     reduced: false,
     springs: {
@@ -269,14 +271,14 @@ describe('GuidedCookFlow — done state', () => {
   })
 })
 
-describe('GuidedCookFlow — Ask Bubbles overlay', () => {
-  it('"Ask Bubbles" button is present on a step card', () => {
+describe('GuidedCookFlow — Ask Bubbly overlay', () => {
+  it('"Ask Bubbly" button is present on a step card', () => {
     renderFlow()
     fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1
     expect(screen.getByTestId('guided-cook-ask-bubbles')).toBeInTheDocument()
   })
 
-  it('clicking "Ask Bubbles" opens the overlay dialog', () => {
+  it('clicking "Ask Bubbly" opens the overlay dialog', () => {
     renderFlow()
     fireEvent.click(screen.getByTestId('guided-cook-next'))
     fireEvent.click(screen.getByTestId('guided-cook-ask-bubbles'))
@@ -303,13 +305,13 @@ describe('GuidedCookFlow — Ask Bubbles overlay', () => {
     expect(screen.getByTestId('guided-cook-step-1')).toBeInTheDocument()
   })
 
-  it('"Ask Bubbles" button is not present on prep screen', () => {
+  it('"Ask Bubbly" button is not present on prep screen', () => {
     renderFlow()
     // still on prep
     expect(screen.queryByTestId('guided-cook-ask-bubbles')).not.toBeInTheDocument()
   })
 
-  it('"Ask Bubbles" button is not present on done state', () => {
+  it('"Ask Bubbly" button is not present on done state', () => {
     renderFlow()
     for (let i = 0; i <= RECIPE.instructions.length; i++) {
       fireEvent.click(screen.getByTestId('guided-cook-next'))
@@ -318,7 +320,7 @@ describe('GuidedCookFlow — Ask Bubbles overlay', () => {
   })
 })
 
-describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
+describe('GuidedCookFlow — Ask Bubbly sends a valid ChatRequest', () => {
   // Regression for the #263 bug: the overlay used to send `mode: 'cooking_help'`,
   // which is not in the ChatRequest mode Literal (chat|recipe|learn|text|voice),
   // so the backend 422'd and the stream never started. The tests here mock
@@ -381,7 +383,7 @@ describe('GuidedCookFlow — Ask Bubbles sends a valid ChatRequest', () => {
     expect('meal_constraints' in request.context).toBe(false)
   })
 
-  it('sends one stable conversation_id for the whole cook, even across closing and reopening Ask Bubbles (#814)', () => {
+  it('sends one stable conversation_id for the whole cook, even across closing and reopening Ask Bubbly (#814)', () => {
     renderFlow()
     fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep → step 1
 
@@ -682,12 +684,12 @@ describe('GuidedCookFlow — pixel step UI (issue #825)', () => {
     expect(screen.getByTestId('guided-cook-back')).toBeDisabled()
   })
 
-  it('draws Ask Bubbles as a secondary keycap that still names the step', () => {
+  it('draws Ask Bubbly as a secondary keycap that still names the step', () => {
     renderFlow()
     fireEvent.click(screen.getByTestId('guided-cook-next'))
     const ask = screen.getByTestId('guided-cook-ask-bubbles')
     expect(ask).toHaveAttribute('data-keycap', 'secondary')
-    expect(ask).toHaveAccessibleName('Ask Bubbles about this step')
+    expect(ask).toHaveAccessibleName('Ask Bubbly about this step')
   })
 
   it('shows the hands-on / hands-off chip for a structured step, like the meal cook', () => {

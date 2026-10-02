@@ -107,7 +107,7 @@ describe('?plan= seed (#651)', () => {
       emoji: '🍽️',
       label: 'Plan dinner',
       title: 'Planning dinner',
-      subtitle: 'Bubbles will suggest a few meals',
+      subtitle: 'Bubbly will suggest a few meals',
       dismissLabel: 'Dismiss dinner planning context',
     })
   })

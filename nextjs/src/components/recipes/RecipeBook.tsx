@@ -535,8 +535,8 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
             mascotState="surprised"
             headerLabel="Your Recipe Book"
             headline="No recipes yet"
-            subline="Ask Chef Bubbly what to cook, or import a recipe with the link button above."
-            ctaLabel="Chat with Bubbles"
+            subline="Ask Bubbly what to cook, or import a recipe with the link button above."
+            ctaLabel="Chat with Bubbly"
             ctaEmoji="💬"
             onCta={() => router.push('/chat')}
           />

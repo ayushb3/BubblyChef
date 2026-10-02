@@ -72,6 +72,6 @@ export const CATALOG: Decoration[] = [
   { id: 'table_flowers', name: 'Flower vase', slot: 'table', emoji: '💐', art: decorationArt('table_flowers') },
 
   // floor_corner
-  { id: 'corner_cat_bed', name: "Bubbles' bed", slot: 'floor_corner', emoji: '🛏️', art: decorationArt('corner_cat_bed') },
+  { id: 'corner_cat_bed', name: "Bubbly's bed", slot: 'floor_corner', emoji: '🛏️', art: decorationArt('corner_cat_bed') },
   { id: 'corner_basket', name: 'Wicker basket', slot: 'floor_corner', emoji: '🧺', art: decorationArt('corner_basket') },
 ]

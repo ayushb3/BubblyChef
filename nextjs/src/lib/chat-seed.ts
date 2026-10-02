@@ -312,7 +312,7 @@ export function deriveChatSeed(
         label: 'Plan dinner',
         title: 'Planning dinner',
         subtitle:
-          foods.length > 0 ? `Using your ${joinFoods(foods)}` : 'Bubbles will suggest a few meals',
+          foods.length > 0 ? `Using your ${joinFoods(foods)}` : 'Bubbly will suggest a few meals',
         dismissLabel: 'Dismiss dinner planning context',
       },
     }
@@ -327,7 +327,7 @@ export function deriveChatSeed(
       message: ask,
       card: {
         emoji: '💬',
-        label: 'Ask Bubbles',
+        label: 'Ask Bubbly',
         title: ask,
         dismissLabel: 'Dismiss question context',
       },
