@@ -9,7 +9,7 @@
  * call sites: ingredient-shape handling (see `ingredientParts`).
  */
 
-import { TO_TASTE, cleanIngredientAmount, cleanIngredientString } from '@/lib/ingredient-amount'
+import { TO_TASTE, cleanIngredientString, formatIngredientAmount, formatIngredientText } from '@/lib/ingredient-amount'
 import type { RecipeIngredient, Step } from '@/types/recipes'
 
 /**
@@ -102,6 +102,11 @@ export function sanitizeSteps(raw: unknown, instructions?: unknown): Step[] | nu
 export interface IngredientParts {
   /** Bare name — lowercase this yourself for a map/lookup key, do not use `label`. */
   name: string
+  /**
+   * The food as shown (#901): set singular or plural for a counted line ("1 egg", "2 eggs").
+   * Display only; keep matching on `name`. Same as `name` for every line that is not a count.
+   */
+  displayName: string
   /** `"<quantity> <unit>"`, or `''` when neither is present (always `''` for a string element). */
   quantityText: string
   /** Full display label — `"<quantity> <unit> <name>"` with missing parts omitted. */
@@ -141,31 +146,36 @@ export interface IngredientParts {
 export function ingredientParts(
   ing: string | RecipeIngredient | null | undefined,
 ): IngredientParts {
-  const empty: IngredientParts = { name: '', quantityText: '', label: '', preparation: null, optional: false }
+  const empty: IngredientParts = {
+    name: '',
+    displayName: '',
+    quantityText: '',
+    label: '',
+    preparation: null,
+    optional: false,
+  }
 
   if (typeof ing === 'string') {
-    // A flattened "0.25 count Cinnamon" reads as "Cinnamon, to taste" (#892).
-    const trimmed = cleanIngredientString(ing.trim())
-    return { name: trimmed, quantityText: '', label: trimmed, preparation: null, optional: false }
+    // A flattened "0.25 count Cinnamon" reads as "Cinnamon, to taste" (#892), and
+    // "1 count eggs" as "1 egg" (#901).
+    const name = cleanIngredientString(ing.trim())
+    const label = formatIngredientText(name)
+    return { name, displayName: label, quantityText: '', label, preparation: null, optional: false }
   }
   if (ing === null || ing === undefined || typeof ing !== 'object') return empty
   if (typeof ing.name !== 'string' || ing.name.trim() === '') return empty
 
-  const isPresent = (value: unknown): value is string | number =>
-    value !== null && value !== undefined && value !== ''
-
-  // A count of a spice, powder or liquid is "to taste", never "0.25 count" (#892).
-  const cleaned = cleanIngredientAmount(ing.name, ing.quantity, ing.unit)
-  const quantityText = cleaned.toTaste
-    ? TO_TASTE
-    : [ing.quantity, ing.unit].filter(isPresent).join(' ')
-  const label = cleaned.toTaste
+  // The amount reads like a recipe (#901): no "count", the unit set by the amount, fraction
+  // glyphs; a count of a spice, powder or liquid is "to taste", never "0.25 count" (#892).
+  const amount = formatIngredientAmount(ing.name, ing.quantity, ing.unit)
+  const label = amount.toTaste
     ? `${ing.name}, ${TO_TASTE}`
-    : [quantityText, ing.name].filter(isPresent).join(' ')
+    : [amount.quantityText, amount.name].filter((part) => part !== '').join(' ')
 
   return {
     name: ing.name,
-    quantityText,
+    displayName: amount.name,
+    quantityText: amount.quantityText,
     label,
     preparation: ing.preparation ?? null,
     optional: Boolean(ing.optional),

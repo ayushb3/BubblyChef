@@ -73,7 +73,7 @@ describe('ingredientLabel (#315)', () => {
   it('tolerates a non-numeric quantity at runtime even though the type is narrowed to number|null', () => {
     // @ts-expect-error — RecipeIngredient.quantity is `number | null`; this
     // exercises the runtime guard's tolerance of malformed data, not the type.
-    expect(ingredientLabel({ name: 'water', quantity: '1/2', unit: 'cup' })).toBe('1/2 cup water')
+    expect(ingredientLabel({ name: 'water', quantity: '1/2', unit: 'cup' })).toBe('½ cup water')
   })
 
   it('returns empty string for null/undefined elements without throwing', () => {
@@ -94,6 +94,7 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
   it('breaks a string element into name/label with empty quantityText, null preparation, false optional', () => {
     expect(ingredientParts('2 large eggs')).toEqual({
       name: '2 large eggs',
+      displayName: '2 large eggs',
       quantityText: '',
       label: '2 large eggs',
       preparation: null,
@@ -104,6 +105,7 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
   it('trims a string element', () => {
     expect(ingredientParts('  a pinch of salt  ')).toEqual({
       name: 'a pinch of salt',
+      displayName: 'a pinch of salt',
       quantityText: '',
       label: 'a pinch of salt',
       preparation: null,
@@ -116,6 +118,7 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
       ingredientParts({ name: 'flour', quantity: 2, unit: 'cups', preparation: 'sifted', optional: true }),
     ).toEqual({
       name: 'flour',
+      displayName: 'flour',
       quantityText: '2 cups',
       label: '2 cups flour',
       preparation: 'sifted',
@@ -126,6 +129,7 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
   it('defaults preparation to null and optional to false when absent', () => {
     expect(ingredientParts({ name: 'egg', quantity: 1, unit: null })).toEqual({
       name: 'egg',
+      displayName: 'egg',
       quantityText: '1',
       label: '1 egg',
       preparation: null,
@@ -136,6 +140,7 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
   it('treats a quantity of 0 as present in quantityText and label', () => {
     expect(ingredientParts({ name: 'sugar', quantity: 0, unit: 'tsp' })).toEqual({
       name: 'sugar',
+      displayName: 'sugar',
       quantityText: '0 tsp',
       label: '0 tsp sugar',
       preparation: null,
@@ -144,13 +149,13 @@ describe('ingredientParts (#315 / repeated-typeof cleanup)', () => {
   })
 
   it('returns all-empty defaults for null/undefined without throwing', () => {
-    const empty = { name: '', quantityText: '', label: '', preparation: null, optional: false }
+    const empty = { name: '', displayName: '', quantityText: '', label: '', preparation: null, optional: false }
     expect(ingredientParts(null)).toEqual(empty)
     expect(ingredientParts(undefined)).toEqual(empty)
   })
 
   it('returns all-empty defaults for a malformed object with no usable name', () => {
-    const empty = { name: '', quantityText: '', label: '', preparation: null, optional: false }
+    const empty = { name: '', displayName: '', quantityText: '', label: '', preparation: null, optional: false }
     // @ts-expect-error — deliberately malformed input, exercising the runtime guard
     expect(ingredientParts({ quantity: 1, unit: 'cup' })).toEqual(empty)
     // @ts-expect-error — name is not a string
