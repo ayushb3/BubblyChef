@@ -97,6 +97,7 @@ describe('kitchen home header (#748)', () => {
     expect(screen.queryByText('ayush')).not.toBeInTheDocument()
   })
 
+  // The counter is the scene's top-right HUD since #907 (see kitchen-balance-hud.test.tsx).
   it('shows the pixel bubbles counter once the balance is known, and not before', async () => {
     mockFetch({ balance: 240 })
     renderHome()
@@ -104,18 +105,6 @@ describe('kitchen home header (#748)', () => {
     expect(screen.queryByTestId('kitchen-bubbles-balance')).not.toBeInTheDocument()
     const counter = await screen.findByTestId('kitchen-bubbles-balance')
     expect(counter).toHaveAttribute('aria-label', '240 bubbles')
-  })
-
-  it('paints the header over the wall, so the counter\'s +N tag below it is not hidden behind the scene (#839)', async () => {
-    mockFetch({ balance: 240 })
-    renderHome()
-    const header = (await screen.findByRole('heading', { name: 'Your kitchen' })).closest('header')
-    expect(header).not.toBeNull()
-    // The wall is a positioned element that comes later in the page, so it paints over
-    // an unpositioned header; the header needs its own stacking level below the sheets.
-    const classes = header!.className.split(/\s+/)
-    expect(classes).toContain('relative')
-    expect(classes).toContain('z-10')
   })
 
   it('keeps the notification bell and the profile button', async () => {
