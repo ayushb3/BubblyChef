@@ -31,7 +31,7 @@ describe('ingredientsForStep (issue #849)', () => {
 
   it('lists every ingredient a step names, in the dish list order', () => {
     const r = ingredientsForStep('Saute', 'Cook the garlic in the butter until soft.', pasta)
-    expect(labels(r)).toEqual(['2 tbsp butter', '3 clove garlic'])
+    expect(labels(r)).toEqual(['2 tbsp butter', '3 cloves garlic'])
   })
 
   it('no match: no chips, never a guess', () => {

@@ -174,7 +174,7 @@ export default function ChatVariant({
             <ul>
               {recipe.ingredients.map((ing, i) => {
                 // `ingredientParts` keeps the dual-shape rule in one module (#315).
-                const { name, quantityText } = ingredientParts(ing)
+                const { name, displayName, quantityText } = ingredientParts(ing)
                 // Availability keys on the bare name, as `ingredient_availability` is built server-side.
                 const avail = availabilityMap.get(name.toLowerCase())
                 return (
@@ -183,7 +183,7 @@ export default function ChatVariant({
                       <span className="min-w-[60px] shrink-0 text-[13px] font-extrabold tabular-nums">
                         {quantityText}
                       </span>
-                      <span className="min-w-0 flex-1 text-sm leading-[19px] font-bold">{titleCase(name)}</span>
+                      <span className="min-w-0 flex-1 text-sm leading-[19px] font-bold">{titleCase(displayName)}</span>
                       {avail && <AvailabilityPill status={avail.status} />}
                     </div>
                     {avail?.status === 'substitute' && avail.substitute_note && (
