@@ -122,7 +122,7 @@ BubblyChef/
 |---|---|---|
 | `/` | Kitchen home | The pixel kitchen wall, expiring items, quick actions. Tapping a storage place opens its storage sheet (Scene \| List). The List is the whole pantry: filters, swipe-to-resolve, Used up / Tossed, edit, and select mode for bulk Move to / Used up / Tossed (issue #750). Deep links: `/?place=fridge&view=scene\|list` (issue #749), `&expiry=expiring,expired` starts the List with the expiry filter on, `/?add=scan\|type` opens the add sheet on that tab |
 | `/pantry` | (redirect) | There is no Pantry tab (issue #750). `/pantry` redirects to `/?place=fridge&view=list`, `/pantry?add=scan` to `/?add=scan`, `/pantry/use-soon` to the List with the expiry filter on |
-| `/recipes` | Recipe library | Search, save, edit, favourite |
+| `/recipes` | Recipe library | Search, save, edit, favorite |
 | `/chat` | Chat | AI assistant — general or recipe mode |
 | `/profile` | Profile | User settings, dietary preferences |
 | `/login` | Auth | Sign in / sign up (Supabase) |
@@ -260,7 +260,7 @@ AIManager.get_provider()  # returns first available: Gemini → Ollama
 **Done:**
 - Phase 1 + 2: pantry CRUD, receipt scanning, recipe generation, chat intent router, 454+ tests
 - Migration: Next.js + Supabase + FastAPI AI microservice (three-tier)
-- Recipe library UI: save, search, edit, delete, favourite
+- Recipe library UI: save, search, edit, delete, favorite
 - Phase 7: Deployed to Vercel + Railway; Gemini Vision OCR; all core features working in production
 
 **Next:** See `ROADMAP.md` for open issues and upcoming work.

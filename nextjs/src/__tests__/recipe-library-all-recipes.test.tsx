@@ -1,6 +1,6 @@
 /**
  * Issue #869: the library loaded only `GET /api/recipes`'s default first page
- * of 50, so search and the Favourites filter (client-side, issue #855) could
+ * of 50, so search and the Favorites filter (client-side, issue #855) could
  * not see recipe 51 onward. The loader now walks every page.
  *
  * The fake route below behaves like the real one: 50 rows when no `limit` is
@@ -90,9 +90,10 @@ describe('library loads every recipe (issue #869)', () => {
     expect(cards[0]).toHaveTextContent('Stew number 55')
   })
 
-  it('the Favourites filter finds a favourite past the first 50', async () => {
+  it('the Favorites filter finds a favorite past the first 50', async () => {
     renderLoader()
-    fireEvent.click(await screen.findByRole('button', { name: /Favourites/ }))
+    await screen.findAllByTestId('recipe-card-saved')
+    fireEvent.click(screen.getByRole('button', { name: 'Favorites' }))
     const cards = await screen.findAllByTestId('recipe-card-saved')
     expect(cards).toHaveLength(1)
     expect(cards[0]).toHaveTextContent('Stew number 55')
