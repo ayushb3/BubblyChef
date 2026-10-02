@@ -1040,7 +1040,9 @@ describe('Start now while a dependency is running (issue #890)', () => {
     column: 'main',
     title: 'Carrots',
     steps: [
-      step({ text: 'Preheat the oven to 220C', label: 'Preheat the oven', ongoing_label: 'the oven preheats', duration_minutes: 10, hands_on: false }),
+      // A genuine dependency on a hands-off wait. (A preheat is no longer one:
+      // issue #891 lets prep run during it, so it can't reproduce this lock.)
+      step({ text: 'Marinate the carrots in the dressing', label: 'Marinate the carrots', ongoing_label: 'the carrots marinate', duration_minutes: 10, hands_on: false }),
       step({ text: 'Season the carrots', label: 'Season the carrots', duration_minutes: 5, hands_on: true, depends_on: [0] }),
       step({ text: 'Roast the carrots', label: 'Roast the carrots', duration_minutes: 20, hands_on: false, depends_on: [0, 1] }),
     ],
