@@ -9,6 +9,7 @@
  * call sites: ingredient-shape handling (see `ingredientParts`).
  */
 
+import { TO_TASTE, cleanIngredientAmount, cleanIngredientString } from '@/lib/ingredient-amount'
 import type { RecipeIngredient, Step } from '@/types/recipes'
 
 /**
@@ -143,7 +144,8 @@ export function ingredientParts(
   const empty: IngredientParts = { name: '', quantityText: '', label: '', preparation: null, optional: false }
 
   if (typeof ing === 'string') {
-    const trimmed = ing.trim()
+    // A flattened "0.25 count Cinnamon" reads as "Cinnamon, to taste" (#892).
+    const trimmed = cleanIngredientString(ing.trim())
     return { name: trimmed, quantityText: '', label: trimmed, preparation: null, optional: false }
   }
   if (ing === null || ing === undefined || typeof ing !== 'object') return empty
@@ -152,8 +154,14 @@ export function ingredientParts(
   const isPresent = (value: unknown): value is string | number =>
     value !== null && value !== undefined && value !== ''
 
-  const quantityText = [ing.quantity, ing.unit].filter(isPresent).join(' ')
-  const label = [quantityText, ing.name].filter(isPresent).join(' ')
+  // A count of a spice, powder or liquid is "to taste", never "0.25 count" (#892).
+  const cleaned = cleanIngredientAmount(ing.name, ing.quantity, ing.unit)
+  const quantityText = cleaned.toTaste
+    ? TO_TASTE
+    : [ing.quantity, ing.unit].filter(isPresent).join(' ')
+  const label = cleaned.toTaste
+    ? `${ing.name}, ${TO_TASTE}`
+    : [quantityText, ing.name].filter(isPresent).join(' ')
 
   return {
     name: ing.name,

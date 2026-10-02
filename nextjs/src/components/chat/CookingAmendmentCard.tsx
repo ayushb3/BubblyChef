@@ -1,6 +1,7 @@
 'use client'
 
 import { titleCase } from '@/lib/format'
+import { TO_TASTE, cleanIngredientAmount } from '@/lib/ingredient-amount'
 import SpringButton from '@/components/ui/SpringButton'
 import PixelPanel from '@/components/ui/PixelPanel'
 import ChatCardHeader from './ChatCardHeader'
@@ -21,7 +22,9 @@ interface CookingAmendmentCardProps {
   onDismiss: () => void
 }
 
-function quantityText(quantity: number, unit: string): string {
+function quantityText(name: string, quantity: number, unit: string): string {
+  // A count of a spice or liquid is "to taste", never "0.25 count" (#892).
+  if (cleanIngredientAmount(name, quantity, unit).toTaste) return TO_TASTE
   const q = Number.isInteger(quantity) ? String(quantity) : String(Math.round(quantity * 100) / 100)
   return [q, unit].filter(Boolean).join(' ')
 }
@@ -68,7 +71,7 @@ export default function CookingAmendmentCard({
                 {ing.optional && <span className="text-[var(--color-muted)]"> (optional)</span>}
               </span>
               <span className="text-[var(--color-muted)] shrink-0">
-                {quantityText(ing.quantity, ing.unit)}
+                {quantityText(ing.name, ing.quantity, ing.unit)}
               </span>
             </li>
           ))}

@@ -14,6 +14,7 @@
  */
 
 import { formatAmount } from '@/lib/format'
+import { TO_TASTE, cleanIngredientAmount, cleanIngredientString } from '@/lib/ingredient-amount'
 import type { MealCookIngredient } from '@/types/meals'
 
 export interface CookIngredient {
@@ -140,7 +141,8 @@ export function cookIngredientsFor(
   const out: CookIngredient[] = []
   ingredients.forEach((ing, i) => {
     if (typeof ing === 'string') {
-      const text = ing.trim()
+      // "0.25 count Cinnamon" (a flattened recipe line) reads as "Cinnamon, to taste" (#892).
+      const text = cleanIngredientString(ing.trim())
       if (!text) return
       out.push({
         key: String(i),
@@ -151,6 +153,12 @@ export function cookIngredientsFor(
     }
     const name = (ing.name ?? '').trim()
     if (!name) return
+    // A count of a spice, powder or liquid is "to taste", never "0.25 count" (#892).
+    const cleaned = cleanIngredientAmount(name, ing.quantity, ing.unit)
+    if (cleaned.toTaste) {
+      out.push({ key: String(i), name, label: `${name}, ${TO_TASTE}` })
+      return
+    }
     const amount =
       typeof ing.quantity === 'number' && Number.isFinite(ing.quantity)
         ? formatAmount(ing.quantity, ing.unit)
