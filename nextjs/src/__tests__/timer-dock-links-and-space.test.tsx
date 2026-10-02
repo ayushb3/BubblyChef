@@ -10,7 +10,7 @@
  */
 
 import React, { useRef } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { CookingTimersProvider, useCookingTimers } from '@/lib/useCookingTimers'
 import TimerDock from '@/components/timers/TimerDock'
 import {
@@ -97,6 +97,60 @@ describe('timer chips link back to their cook (issue #848)', () => {
     mountWithTimer()
     expect(screen.queryByRole('link', { name: /simmer sauce/i })).not.toBeInTheDocument()
     expect(screen.getByTestId(/timer-badge-/)).toBeInTheDocument()
+  })
+})
+
+describe('a linked chip keeps truncating a long label (issue #848 review)', () => {
+  const LONG = 'Slow-roast the whole spatchcocked chicken with lemon, thyme and garlic until golden'
+
+  function LongStarter() {
+    const { start } = useCookingTimers()
+    return (
+      <button type="button" onClick={() => start(LONG, 600)}>
+        start
+      </button>
+    )
+  }
+
+  function mountLongLabelWithLink() {
+    startGuidedCookSession('r-lemon')
+    saveCookProgress('r-lemon', 2)
+    render(
+      <CookingTimersProvider>
+        <LongStarter />
+        <TimerDock />
+      </CookingTimersProvider>,
+    )
+    act(() => {
+      screen.getByText('start').click()
+    })
+  }
+
+  it('expanded: the link takes the row slack and may shrink, so the inner label truncates', () => {
+    mountLongLabelWithLink()
+    fireEvent.click(screen.getByRole('button', { name: /expand timers/i }))
+
+    const link = screen.getByRole('link', { name: /back to cooking/i })
+    expect(link.className).toContain('flex-1')
+    expect(link.className).toContain('min-w-0')
+    expect(link.className).not.toContain('flex-shrink-0')
+    const label = screen.getByText(LONG)
+    expect(label.className).toContain('truncate')
+    expect(label.className).toContain('min-w-0')
+  })
+
+  it('collapsed: the pill still never shrinks', () => {
+    mountLongLabelWithLink()
+    const link = screen.getByRole('link', { name: /back to cooking/i })
+    expect(link.className).toContain('flex-shrink-0')
+  })
+
+  it('every dock control stays non-shrinking next to a linked label', () => {
+    mountLongLabelWithLink()
+    fireEvent.click(screen.getByRole('button', { name: /expand timers/i }))
+    for (const name of [/pause/i, /add 2 minutes/i, /dismiss/i]) {
+      expect(screen.getByRole('button', { name }).className).toContain('flex-shrink-0')
+    }
   })
 })
 

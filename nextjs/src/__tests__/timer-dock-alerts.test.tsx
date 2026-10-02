@@ -251,3 +251,55 @@ describe('TimerDock finish feedback with Timer sound off (issue #848)', () => {
     expect(N).not.toHaveBeenCalled()
   })
 })
+
+describe('audio is unlocked inside a user gesture when sound is on (issue #848 review)', () => {
+  let savedAudio: unknown
+  let audioCtor: jest.Mock
+  let resume: jest.Mock
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    savedAudio = win.AudioContext
+    resume = jest.fn().mockResolvedValue(undefined)
+    audioCtor = jest.fn().mockImplementation(() => ({ state: 'suspended', resume }))
+    win.AudioContext = audioCtor
+  })
+  afterEach(() => {
+    win.AudioContext = savedAudio
+  })
+
+  it('preference on: starting a timer creates and resumes the context inside that click', () => {
+    soundOn()
+    mountDock()
+    expect(audioCtor).not.toHaveBeenCalled()
+
+    act(() => {
+      screen.getByText('start').click()
+    })
+
+    // Nothing was advanced or awaited: it happened synchronously in the tap.
+    expect(audioCtor).toHaveBeenCalledTimes(1)
+    expect(resume).toHaveBeenCalled()
+  })
+
+  it('preference on: the first tap on the page unlocks it, so a timer from before a reload still chimes', () => {
+    soundOn()
+    mountDock()
+    expect(audioCtor).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(document.body)
+
+    expect(audioCtor).toHaveBeenCalledTimes(1)
+    expect(resume).toHaveBeenCalled()
+  })
+
+  it('preference off: neither a tap nor a timer start touches audio', () => {
+    mountDock()
+    fireEvent.pointerDown(document.body)
+    act(() => {
+      screen.getByText('start').click()
+    })
+
+    expect(audioCtor).not.toHaveBeenCalled()
+  })
+})

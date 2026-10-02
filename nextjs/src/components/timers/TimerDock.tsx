@@ -33,7 +33,7 @@ import { getActiveCookSession, type ActiveCookSession } from '@/lib/cook-session
 import { getActiveMealCookSession, type MealCookSession } from '@/lib/meal-cook-session'
 import { subscribeCookSessionChanges } from '@/lib/cook-session-signal'
 import { timerCookHref } from '@/lib/timer-cook-link'
-import { isTimerSoundEnabled, notifyTimerDone, startChime } from '@/lib/timer-alerts'
+import { isTimerSoundEnabled, notifyTimerDone, startChime, unlockAudio } from '@/lib/timer-alerts'
 import {
   useCookingTimers,
   TIMER_STARTED_EVENT,
@@ -171,7 +171,10 @@ function TimerBadge({
           onClick={isCompleted ? () => dismiss(timer.id) : undefined}
           aria-label={`${timer.label}: back to cooking`}
           data-testid={`timer-link-${timer.id}`}
-          className="flex min-h-[32px] min-w-0 flex-shrink-0 items-center gap-2 rounded-full text-[color:var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+          // Expanded: the face takes the row's slack and may shrink, so a long label
+          // truncates inside it (the controls beside it keep their size). Collapsed:
+          // a compact pill that must not shrink (issue #664).
+          className={`flex min-h-[32px] min-w-0 items-center gap-2 rounded-full text-[color:var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 ${expanded ? 'flex-1' : 'flex-shrink-0'}`}
         >
           {badgeFace}
         </Link>
@@ -311,6 +314,15 @@ export default function TimerDock() {
     function handleStarted(event: Event) {
       const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
       announce(`${label} timer started`)
+      // iOS only plays audio from a context created or resumed inside a user
+      // gesture, and the context does not survive a reload. A timer start is that
+      // gesture, so unlock here, but only when the user opted in to sound.
+      if (isTimerSoundEnabled()) unlockAudio()
+    }
+    // The first tap on the page also unlocks it (opted in only), so a timer that was
+    // started before a reload still chimes when it finishes.
+    function handlePointerDown() {
+      if (isTimerSoundEnabled()) unlockAudio()
     }
     function handleCompleted(event: Event) {
       const { id, label } = (event as CustomEvent<{ id: string; label: string }>).detail
@@ -326,7 +338,9 @@ export default function TimerDock() {
     }
     window.addEventListener(TIMER_STARTED_EVENT, handleStarted)
     window.addEventListener(TIMER_COMPLETED_EVENT, handleCompleted)
+    document.addEventListener('pointerdown', handlePointerDown, { capture: true, passive: true })
     return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, { capture: true })
       window.removeEventListener(TIMER_STARTED_EVENT, handleStarted)
       window.removeEventListener(TIMER_COMPLETED_EVENT, handleCompleted)
       if (resetTimeout !== null) clearTimeout(resetTimeout)
