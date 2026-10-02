@@ -468,12 +468,15 @@ function firstRunningAncestor(
 }
 
 /**
- * Issue #663 — Start now is offered only when nothing the step follows is
- * still running: `waiting_on` set means a dependency (through skipped steps)
- * is in flight. A type guard, so callers can read `card.step` afterwards.
+ * Start now is offered on every `upcoming` card. Issue #663 hid it while
+ * `waiting_on` was set (a dependency, through skipped steps, still running),
+ * which left the cook with only Skip: a hard lock (issue #890). BubblyChef
+ * guides, the cook decides: starting the step leaves the running one ticking in
+ * the dock, and the scheduler already keeps later steps behind every running
+ * dependency. A type guard, so callers can read `card.step` afterwards.
  */
 export function canStartEarly(card: NowCard): card is Extract<NowCard, { kind: 'upcoming' }> {
-  return card.kind === 'upcoming' && !card.waiting_on
+  return card.kind === 'upcoming'
 }
 
 /**

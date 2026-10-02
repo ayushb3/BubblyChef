@@ -485,8 +485,23 @@ export default function MealCookPage() {
     updateSession(recordSkip(session, stream.now.step, nowMinutes))
   }
 
+  // Issue #890 — "Done early" on the running step the Now card is waiting on
+  // (the oven is ready before its timer says so): clears its dock timer and
+  // marks it done now, which unblocks its dependents like any other finish.
+  function handleFinishWaiting() {
+    if (!session || !stream || stream.now.kind !== 'upcoming') return
+    const waitingOn = stream.now.waiting_on
+    if (!waitingOn) return
+    if (tapGuarded()) return
+    clearFinishedTimers()
+    const timerId = session.steps[waitingOn.key]?.timer_id
+    if (timerId) dismissTimer(timerId)
+    updateSession(recordDone(session, waitingOn, nowMinutes))
+  }
+
   function handleStartEarly() {
-    // Issue #663 — not while a step this one follows is still running.
+    // Issue #890 — allowed even while a step this one follows is still
+    // running: that step's timer keeps running in the dock, untouched.
     if (!session || !stream || !canStartEarly(stream.now)) return
     if (tapGuarded()) return
     clearFinishedTimers()
@@ -877,6 +892,7 @@ export default function MealCookPage() {
               onExtend={handleExtend}
               onSkip={handleSkip}
               onStartEarly={handleStartEarly}
+              onFinishWaiting={handleFinishWaiting}
               onAskBubbles={handleAskBubbles}
               progress={dishProgress(allStreamSteps, session.steps)}
               stepIngredients={nowCardIngredients}

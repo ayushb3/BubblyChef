@@ -1356,7 +1356,7 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
   })
 })
 
-describe('MealCookPage — Start now only when nothing it follows is running (issue #663)', () => {
+describe('MealCookPage — Start now is never locked behind a running timer (issues #663, #890)', () => {
   // The :312-style fixture: Simmer sauce runs on timer-1, and Plate up (its
   // dependent) is the upcoming card, "after Simmer sauce".
   function seedSimmerRunning() {
@@ -1369,13 +1369,72 @@ describe('MealCookPage — Start now only when nothing it follows is running (is
     ]
   }
 
-  it('shows the waiting-on line, no Start now, and Skip while the dependency runs', async () => {
+  it('explains the wait and still offers Start now, Skip and Done early while the dependency runs', async () => {
     seedSimmerRunning()
     renderPage()
     await waitFor(() => expect(screen.getByTestId('meal-now-card-waiting-on')).toHaveTextContent('Simmer sauce'))
 
-    expect(screen.queryByRole('button', { name: 'Start now' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('meal-now-card-waiting-on')).toHaveTextContent('You can start now')
+    expect(screen.getByTestId('meal-now-card-keeps-running')).toHaveTextContent('Simmer sauce keeps running')
+    expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark Simmer sauce done early' })).toBeInTheDocument()
+  })
+
+  it('Start now makes the step active while the running timer keeps running; Done, then the timer finishing, ends the cook', async () => {
+    jest.useFakeTimers()
+    seedSimmerRunning()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Start now' }).click()
+    })
+    await waitForStepStatus('r-main:2', 'running')
+
+    // The timer is untouched: not dismissed, not restarted, step still running.
+    expect(mockDismiss).not.toHaveBeenCalled()
+    expect(mockStart).not.toHaveBeenCalled()
+    const afterStart = getActiveMealCookSession('meal-1')
+    expect(afterStart?.steps['r-main:1']).toMatchObject({ status: 'running', timer_id: 'timer-1' })
+    expect(screen.getByTestId('meal-now-card-badge')).toHaveTextContent('Hands-on')
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
+    expect(screen.getByTestId('meal-running-strip')).toHaveTextContent('the sauce simmers')
+
+    act(() => {
+      screen.getByRole('button', { name: 'Done' }).click()
+    })
+    await waitForStepStatus('r-main:2', 'done')
+    // Only the simmer is left, still running in the dock: not finished yet.
+    expect(screen.getByTestId('meal-now-card-waiting-copy')).toBeInTheDocument()
+    expect(getActiveMealCookSession('meal-1')?.steps['r-main:1']?.status).toBe('running')
+
+    // The timer finishing later completes the cook, nothing regresses.
+    mockTimers = [{ id: 'timer-1', label: 'Simmer sauce', durationSeconds: 480, remainingSeconds: 0, status: 'completed' }]
+    act(() => {
+      jest.advanceTimersByTime(65_000)
+    })
+    act(() => {
+      window.dispatchEvent(new CustomEvent(TIMER_COMPLETED_EVENT, { detail: { id: 'timer-1', label: 'Simmer sauce' } }))
+    })
+    await waitForStepStatus('r-main:1', 'done')
+    expect(screen.queryByTestId('meal-now-card')).not.toBeInTheDocument()
+  })
+
+  it('Done early dismisses the running timer, marks its step done and unblocks the dependent', async () => {
+    seedSimmerRunning()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark Simmer sauce done early' })).toBeInTheDocument())
+
+    act(() => {
+      screen.getByRole('button', { name: 'Mark Simmer sauce done early' }).click()
+    })
+
+    expect(mockDismiss).toHaveBeenCalledWith('timer-1')
+    await waitForStepStatus('r-main:1', 'done')
+    await waitFor(() => expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument())
+    expect(screen.getByText('Plate up')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start now' })).toBeInTheDocument()
   })
 
   it('once the dependency completes, the waiting-on line is gone and Start now is offered', async () => {

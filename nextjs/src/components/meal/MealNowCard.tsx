@@ -40,6 +40,12 @@ export interface MealNowCardProps {
   onExtend: () => void
   onSkip: () => void
   onStartEarly: () => void
+  /**
+   * Issue #890 — marks the running step this `upcoming` card is waiting on as
+   * done now ("Done early": the oven is ready). Rendered only on a card with
+   * `waiting_on`, and omitted entirely when this prop is left out.
+   */
+  onFinishWaiting?: () => void
   disabled?: boolean
   /**
    * Opens the per-dish Ask Bubbles overlay, pinned to this card's dish
@@ -110,6 +116,7 @@ export default function MealNowCard({
   onExtend,
   onSkip,
   onStartEarly,
+  onFinishWaiting,
   disabled = false,
   onAskBubbles,
   progress,
@@ -147,7 +154,8 @@ export default function MealNowCard({
           </p>
           {card.waiting_on && (
             <p className="mt-1 text-xs text-[color:var(--color-text)]" data-testid="meal-now-card-waiting-on">
-              after {card.waiting_on.label}
+              Waiting on {card.waiting_on.label}
+              {card.waiting_on.hands_on ? '' : ' (timer)'}. You can start now.
             </p>
           )}
           <p className="mt-3 text-2xl leading-tight font-extrabold text-[color:var(--color-text)]">{card.step.label}</p>
@@ -156,8 +164,9 @@ export default function MealNowCard({
           </p>
           <StepIngredientChips labels={stepIngredients ?? []} />
           <div className="mt-4 flex flex-wrap gap-2.5">
-            {/* Issue #663: no Start now while a step this one follows is
-                still running — the "after ‹label›" line above says why. */}
+            {/* Issue #890: Start now is always there, even while a step this
+                one follows is still running (the line above says why it is
+                waiting, and the one below that the running step carries on). */}
             {canStartEarly(card) && (
               <SpringButton variant="primary" onClick={onStartEarly} disabled={disabled} aria-label="Start now">
                 Start now
@@ -166,8 +175,24 @@ export default function MealNowCard({
             <SpringButton variant="secondary" onClick={onSkip} disabled={disabled} aria-label="Skip">
               Skip
             </SpringButton>
+            {card.waiting_on && onFinishWaiting && (
+              <SpringButton
+                variant="secondary"
+                onClick={onFinishWaiting}
+                disabled={disabled}
+                aria-label={`Mark ${card.waiting_on.label} done early`}
+                data-testid="meal-now-card-done-early"
+              >
+                Done early
+              </SpringButton>
+            )}
             {onAskBubbles && <AskBubblesKey onClick={onAskBubbles} disabled={disabled} />}
           </div>
+          {card.waiting_on && (
+            <p className="mt-2 text-xs text-[color:var(--color-text)]" data-testid="meal-now-card-keeps-running">
+              {card.waiting_on.label} keeps running.
+            </p>
+          )}
         </>
       )}
 
