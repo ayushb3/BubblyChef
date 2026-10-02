@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useMotionConfig } from '@/lib/motion'
+import { useMotionConfig, useSteppedFrame } from '@/lib/motion'
 
 export type BubblesState = 'happy' | 'surprised' | 'thinking' | 'worried' | 'celebrate'
 
@@ -12,6 +12,14 @@ interface BubblesMascotProps {
   size?: number
   className?: string
   animate?: boolean
+  /**
+   * The two-frame flip-book (issue #887): the original image, then the mirrored
+   * one, a hard cut every `FLIP_MS`. On by default for `thinking` and off for
+   * every other pose; pass `flip` to give any pose the flip (a tap reaction, say)
+   * or `flip={false}` to hold the thinking pose still. Always still under
+   * reduced motion or `animate={false}`.
+   */
+  flip?: boolean
 }
 
 // Exported (not just module-private) so tests can walk every entry and
@@ -28,6 +36,16 @@ export const STATE_SRC: Record<BubblesState, string> = {
   celebrate: '/mascot/bubbles-celebrate.png',
 }
 
+/**
+ * The flip-book beat (issue #887): the original image, then the same image
+ * mirrored, a hard stepped cut (no tween) every `FLIP_MS`. Bubbly is part of the
+ * world, so it steps frame by frame rather than gliding. Under reduced motion, or
+ * with `animate={false}`, it holds the original frame.
+ */
+export const FLIP_MS = 450
+/** The thinking pose's beat; the same flip-book. */
+export const THINKING_FLIP_MS = FLIP_MS
+
 /** Sparkle burst positions fired outward from the mascot on `celebrate` (issue #525). */
 const SPARKLES = [
   { emoji: '✨', x: -18, y: -22, delay: 0 },
@@ -40,12 +58,18 @@ export default function BubblesMascot({
   size = 80,
   className,
   animate = true,
+  flip,
 }: BubblesMascotProps) {
   // Gates all new motion (bounce, sparkle burst) on top of the existing
   // `animate` prop gate — `prefers-reduced-motion: reduce` still swaps the
   // image/badge for the right state, it just skips the movement.
   const { reduced: prefersReducedMotion } = useMotionConfig()
   const motionEnabled = animate && !prefersReducedMotion
+  // `useSteppedFrame` already holds frame 0 under reduced motion; `flips &&
+  // animate` keeps every still use off the timer.
+  const flips = flip ?? state === 'thinking'
+  const flipFrame = useSteppedFrame(2, FLIP_MS, flips && animate)
+  const mirrored = flips && flipFrame === 1
 
   // Re-mounting BubblesMascot with `state="celebrate"` already replays the
   // bounce (it's driven by `animate` running from `initial` on mount), but a
@@ -71,32 +95,22 @@ export default function BubblesMascot({
     ? { duration: 3, repeat: Infinity, ease: 'easeInOut' as const }
     : {}
 
-  // Wobble is new-ish motion layered on top of `thinking` — gated on reduced
-  // motion (not just `animate`) so `prefers-reduced-motion: reduce` drops it
-  // entirely (the float it would otherwise fall back to is itself gated off
-  // above), same as the bounce/sparkle below.
-  const wobbleAnimation =
-    motionEnabled && state === 'thinking' ? { rotate: [0, -3, 3, -2, 2, 0] } : {}
-  const wobbleTransition =
-    motionEnabled && state === 'thinking'
-      ? { duration: 2, repeat: Infinity, ease: 'easeInOut' as const, type: 'tween' as const }
-      : {}
-
   const isCelebrating = state === 'celebrate'
 
-  const combinedAnimate =
-    motionEnabled && state === 'thinking'
-      ? { ...floatAnimation, ...wobbleAnimation }
-      : isCelebrating && motionEnabled
-        ? { scale: [1, 1.25, 0.95, 1.05, 1] }
-        : floatAnimation
+  // Thinking has no float or wobble: the flip-book is its one visible motion
+  // (issue #887), so the pose reads as stepped frames, not a drifting still.
+  const isThinking = state === 'thinking'
+  const combinedAnimate = isThinking
+    ? {}
+    : isCelebrating && motionEnabled
+      ? { scale: [1, 1.25, 0.95, 1.05, 1] }
+      : floatAnimation
 
-  const combinedTransition =
-    motionEnabled && state === 'thinking'
-      ? wobbleTransition
-      : isCelebrating && motionEnabled
-        ? { duration: 0.6, ease: 'easeOut' as const }
-        : floatTransition
+  const combinedTransition = isThinking
+    ? {}
+    : isCelebrating && motionEnabled
+      ? { duration: 0.6, ease: 'easeOut' as const }
+      : floatTransition
 
   return (
     <motion.div
@@ -115,7 +129,13 @@ export default function BubblesMascot({
           alt={`Bubbles ${state}`}
           width={size}
           height={size}
-          style={{ width: size, height: size, objectFit: 'contain' }}
+          data-flip-frame={flips ? (mirrored ? 'mirrored' : 'original') : undefined}
+          style={{
+            width: size,
+            height: size,
+            objectFit: 'contain',
+            ...(mirrored ? { transform: 'scaleX(-1)' } : {}),
+          }}
           onError={(e) => {
             ;(e.currentTarget as HTMLImageElement).style.display = 'none'
           }}
