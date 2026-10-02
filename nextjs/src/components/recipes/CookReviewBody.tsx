@@ -12,6 +12,7 @@
  */
 
 import React from 'react'
+import { formatAmountText } from '@/lib/ingredient-amount'
 import { storageSheetHref } from '@/lib/kitchen/places'
 import type {
   CookProposal,
@@ -89,8 +90,8 @@ function isQuietLine(m: IngredientMatch): boolean {
  */
 function formatQty(qty: number | null, unit: string | null, approximate = false): string {
   if (qty == null) return '—'
-  const rounded = Math.round(qty * 100) / 100
-  const text = unit ? `${rounded} ${unit}` : String(rounded)
+  // The amount reads like a recipe (#901): fraction glyphs, and never the word "count".
+  const text = formatAmountText(qty, unit)
   return approximate ? `≈ ${text}` : text
 }
 
