@@ -1,9 +1,9 @@
 /**
- * How a finished cooking timer gets your attention (issue #848): a short
- * WebAudio chime that repeats up to three times until the timer is dismissed,
- * and a system Notification where permission is already granted. (Vibration
- * stays in `TimerDock`.) iOS Safari has no vibration, so without the chime a
- * finished timer on an iPhone was silent.
+ * Opt-in finish alerts for a cooking timer (issue #848): a short WebAudio chime
+ * that repeats up to three times until the timer is dismissed, and a system
+ * Notification where permission is granted. Both are off unless the user turns
+ * on "Timer sound" in Profile (`isTimerSoundEnabled`); the dock checks it. (Vibration
+ * stays in `TimerDock` and is unchanged.)
  *
  * Everything here is best effort and swallows its own failures: no WebAudio, a
  * suspended audio context, no Notification API, or a browser that refuses
@@ -12,8 +12,8 @@
  * notification only fires while the page is alive.
  *
  * Browsers only let audio start from a user gesture. `unlockAudio` is called
- * from the timer-start event (itself the result of a tap) to create and resume
- * the context early, so the chime can play later with no gesture.
+ * when the toggle is turned on (a tap) to create and resume the context early,
+ * so the chime can play later with no gesture.
  */
 
 /** How many times a finished timer chimes if nobody dismisses it. */
@@ -21,8 +21,43 @@ export const CHIME_REPEATS = 3
 /** Gap between repeats, in ms. */
 export const CHIME_INTERVAL_MS = 4_000
 
-/** localStorage flag: the notification ask has been shown once; never show it again. */
-export const NOTIFY_ASKED_KEY = 'bubblychef:timer-notify-asked'
+/**
+ * localStorage key of the "Timer sound" preference (Profile). Same place the
+ * theme and the other client-side preferences live. Absent means off.
+ */
+export const TIMER_SOUND_KEY = 'bubblychef:timer-sound'
+
+/** Whether the user has turned timer sound on. Off unless explicitly enabled. */
+export function isTimerSoundEnabled(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(TIMER_SOUND_KEY) === 'on'
+  } catch {
+    return false
+  }
+}
+
+const TIMER_SOUND_CHANGED_EVENT = 'bubblychef:timer-sound-changed'
+
+export function setTimerSoundEnabled(enabled: boolean): void {
+  try {
+    if (enabled) window.localStorage.setItem(TIMER_SOUND_KEY, 'on')
+    else window.localStorage.removeItem(TIMER_SOUND_KEY)
+  } catch {
+    // Storage unavailable: the choice just does not stick.
+  }
+  window.dispatchEvent(new Event(TIMER_SOUND_CHANGED_EVENT))
+}
+
+/** Follow the preference: this tab's changes and other tabs' (`storage`). */
+export function subscribeTimerSound(onChange: () => void): () => void {
+  window.addEventListener(TIMER_SOUND_CHANGED_EVENT, onChange)
+  window.addEventListener('storage', onChange)
+  return () => {
+    window.removeEventListener(TIMER_SOUND_CHANGED_EVENT, onChange)
+    window.removeEventListener('storage', onChange)
+  }
+}
 
 type AudioContextCtor = new () => AudioContext
 
@@ -116,7 +151,7 @@ function notificationApi(): typeof Notification | null {
   return N ?? null
 }
 
-/** A system notification for a finished timer, only where permission is already granted. */
+/** A system notification for a finished timer, only where permission is granted. */
 export function notifyTimerDone(label: string): void {
   const N = notificationApi()
   if (!N || N.permission !== 'granted') return
@@ -127,30 +162,14 @@ export function notifyTimerDone(label: string): void {
   }
 }
 
-/** Whether the one-time notification ask should be shown now. */
-export function shouldAskForNotifications(): boolean {
-  const N = notificationApi()
-  if (!N || N.permission !== 'default') return false
-  try {
-    return window.localStorage.getItem(NOTIFY_ASKED_KEY) === null
-  } catch {
-    return false
-  }
-}
-
-/** Record that the ask was shown, so it is never shown again. */
-export function markNotificationAsked(): void {
-  try {
-    window.localStorage.setItem(NOTIFY_ASKED_KEY, '1')
-  } catch {
-    // Storage unavailable: the ask may reappear next load; nothing safer to do.
-  }
-}
-
-/** Ask the browser for notification permission. Resolves quietly on any failure. */
+/**
+ * Ask the browser for notification permission, only if it has not decided yet
+ * (never re-asks after a denial). Call from a tap: the "Timer sound" toggle
+ * being turned on is the only caller. Resolves quietly on any failure.
+ */
 export async function requestNotificationPermission(): Promise<void> {
   const N = notificationApi()
-  if (!N) return
+  if (!N || N.permission !== 'default') return
   try {
     await N.requestPermission()
   } catch {

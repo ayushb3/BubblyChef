@@ -1,16 +1,21 @@
 /**
- * Issue #848 — a finished timer is heard, not just seen: a short WebAudio chime
- * (repeated up to 3 times until dismissed), vibration where supported, and a
- * system Notification when permission is already granted. Notification
- * permission is asked for once, the first time a timer starts, and never again
- * after that. (Replaces the issue #783 "no sound" test: iOS Safari has no
- * vibration, so a finished timer was otherwise silent.)
+ * Issue #848 — timer sound is OPT-IN (Profile > Timer sound; the signature PRD's
+ * "no sound in v1" stays the default, see `timer-dock-no-sound.test.tsx`). With
+ * the toggle on, a finished timer plays a short WebAudio chime (repeated up to 3
+ * times until dismissed) and shows a system Notification when permission is
+ * granted. With it off, neither happens and no permission is ever requested.
+ * Vibration is unchanged either way. The dock never asks for permission itself.
  */
 
 import React from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { CookingTimersProvider, useCookingTimers } from '@/lib/useCookingTimers'
 import TimerDock from '@/components/timers/TimerDock'
+import { TIMER_SOUND_KEY } from '@/lib/timer-alerts'
+
+function soundOn() {
+  window.localStorage.setItem(TIMER_SOUND_KEY, 'on')
+}
 
 function StartButton() {
   const { start } = useCookingTimers()
@@ -55,7 +60,7 @@ function installNotification(permission: NotificationPermission): FakeNotificati
   return ctor
 }
 
-describe('TimerDock finish feedback (issue #848)', () => {
+describe('TimerDock finish feedback with Timer sound on (issue #848)', () => {
   let savedAudio: unknown
   let savedWebkitAudio: unknown
   let savedNotification: unknown
@@ -104,6 +109,7 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 
   it('plays a chime and vibrates when a timer finishes', async () => {
+    soundOn()
     installNotification('denied')
     mountDock()
     await startAndFinish()
@@ -113,6 +119,7 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 
   it('repeats the chime up to 3 times while the timer is not dismissed, then stops', async () => {
+    soundOn()
     installNotification('denied')
     mountDock()
     await startAndFinish()
@@ -126,6 +133,7 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 
   it('stops chiming as soon as the finished timer is dismissed', async () => {
+    soundOn()
     installNotification('denied')
     mountDock()
     await startAndFinish()
@@ -139,6 +147,7 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 
   it('still finishes cleanly where WebAudio is unsupported', async () => {
+    soundOn()
     installNotification('denied')
     delete win.AudioContext
     delete win.webkitAudioContext
@@ -148,7 +157,8 @@ describe('TimerDock finish feedback (issue #848)', () => {
     expect(screen.getByTestId(/timer-badge-/)).toHaveAttribute('data-status', 'completed')
   })
 
-  it('shows a system notification on finish when permission is already granted', async () => {
+  it('shows a system notification on finish when permission is granted', async () => {
+    soundOn()
     const N = installNotification('granted')
     mountDock()
     await startAndFinish()
@@ -158,6 +168,7 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 
   it('shows no notification when permission is not granted', async () => {
+    soundOn()
     const N = installNotification('default')
     mountDock()
     await startAndFinish()
@@ -166,6 +177,7 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 
   it('finishes cleanly where Notification is unsupported', async () => {
+    soundOn()
     delete win.Notification
     mountDock()
     await startAndFinish()
@@ -175,86 +187,67 @@ describe('TimerDock finish feedback (issue #848)', () => {
   })
 })
 
-describe('notification permission ask (issue #848)', () => {
+describe('TimerDock finish feedback with Timer sound off (issue #848)', () => {
+  let savedAudio: unknown
   let savedNotification: unknown
+  let audioCtor: jest.Mock
+  let vibrate: jest.Mock
 
   beforeEach(() => {
     window.localStorage.clear()
+    jest.useFakeTimers()
+    savedAudio = win.AudioContext
     savedNotification = win.Notification
+    audioCtor = jest.fn()
+    win.AudioContext = audioCtor
+    vibrate = jest.fn()
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true })
   })
   afterEach(() => {
+    jest.useRealTimers()
+    win.AudioContext = savedAudio
     win.Notification = savedNotification
+    delete (navigator as unknown as { vibrate?: unknown }).vibrate
   })
 
-  it('asks once, with a one-line reason, the first time a timer starts', () => {
+  it('plays no chime, shows no notification and requests no permission, even when permission is granted', async () => {
+    const N = installNotification('granted')
+    mountDock()
+    await startAndFinish()
+
+    expect(audioCtor).not.toHaveBeenCalled()
+    expect(N).not.toHaveBeenCalled()
+    expect(N.requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('does not ask for notification permission when a timer starts', () => {
     const N = installNotification('default')
     mountDock()
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
-
     act(() => {
       screen.getByText('start').click()
     })
-    expect(screen.getByTestId('timer-notify-ask')).toHaveTextContent(/finish/i)
+
     expect(N.requestPermission).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: /allow/i }))
-    expect(N.requestPermission).toHaveBeenCalledTimes(1)
     expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /allow/i })).not.toBeInTheDocument()
   })
 
-  it('never asks again after a decline, on a later timer or a fresh load', () => {
+  it('still vibrates and shows the finished chip', async () => {
     installNotification('default')
-    const first = mountDock()
-    act(() => {
-      screen.getByText('start').click()
-    })
-    fireEvent.click(screen.getByRole('button', { name: /not now/i }))
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
-
-    act(() => {
-      screen.getByText('start').click()
-    })
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
-
-    first.unmount()
     mountDock()
-    act(() => {
-      screen.getByText('start').click()
-    })
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
+    await startAndFinish()
+
+    expect(vibrate).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId(/timer-badge-/)).toHaveAttribute('data-status', 'completed')
   })
 
-  it('does not ask again after an ignored ask either (asked means asked once)', () => {
-    installNotification('default')
-    const first = mountDock()
-    act(() => {
-      screen.getByText('start').click()
-    })
-    expect(screen.getByTestId('timer-notify-ask')).toBeInTheDocument()
-    first.unmount()
-
+  it('a stored value other than "on" counts as off', async () => {
+    window.localStorage.setItem(TIMER_SOUND_KEY, 'off')
+    const N = installNotification('granted')
     mountDock()
-    act(() => {
-      screen.getByText('start').click()
-    })
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
-  })
+    await startAndFinish()
 
-  it('does not ask once the browser has already decided (denied or granted)', () => {
-    installNotification('denied')
-    const a = mountDock()
-    act(() => {
-      screen.getByText('start').click()
-    })
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
-    a.unmount()
-
-    window.localStorage.clear()
-    installNotification('granted')
-    mountDock()
-    act(() => {
-      screen.getByText('start').click()
-    })
-    expect(screen.queryByTestId('timer-notify-ask')).not.toBeInTheDocument()
+    expect(audioCtor).not.toHaveBeenCalled()
+    expect(N).not.toHaveBeenCalled()
   })
 })

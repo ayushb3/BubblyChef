@@ -10,12 +10,13 @@
  * so it survives route changes (`/pantry`, `/chat`, ...) the same way the
  * timer store itself does.
  *
- * Completion feedback (issue #848): a badge turns urgent and pulses, a
- * screen-reader announcement, a short WebAudio chime repeated up to 3 times
- * until the timer is dismissed (`lib/timer-alerts.ts`), vibration where the
- * browser supports it, and a system Notification where permission was already
- * granted. Permission is asked once, the first time a timer starts, in a
- * one-line strip in the dock, and never again.
+ * Completion feedback: a badge turns urgent and pulses, a screen-reader
+ * announcement, and vibration where the browser supports it. Sound is OFF by
+ * default (the signature PRD's "no sound in v1", issue #783). Only when the
+ * user turns on "Timer sound" in Profile (issue #848, `lib/timer-alerts.ts`)
+ * does a finish also play a short WebAudio chime, repeated up to 3 times until
+ * the timer is dismissed, and show a system Notification if the browser
+ * granted permission (asked for when the toggle is turned on, never here).
  *
  * The dock reserves its own space (issue #848): it publishes its height as the
  * `--timer-dock-h` CSS variable on the document root, which the root layout's
@@ -25,21 +26,14 @@
  * A chip links back to the cook it belongs to (`lib/timer-cook-link.ts`).
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import { getActiveCookSession, type ActiveCookSession } from '@/lib/cook-session'
 import { getActiveMealCookSession, type MealCookSession } from '@/lib/meal-cook-session'
 import { subscribeCookSessionChanges } from '@/lib/cook-session-signal'
 import { timerCookHref } from '@/lib/timer-cook-link'
-import {
-  markNotificationAsked,
-  notifyTimerDone,
-  requestNotificationPermission,
-  shouldAskForNotifications,
-  startChime,
-  unlockAudio,
-} from '@/lib/timer-alerts'
+import { isTimerSoundEnabled, notifyTimerDone, startChime } from '@/lib/timer-alerts'
 import {
   useCookingTimers,
   TIMER_STARTED_EVENT,
@@ -240,8 +234,6 @@ export default function TimerDock() {
   // update — so a screen reader hears "X timer started" and "X timer
   // finished" and nothing in between.
   const [announcement, setAnnouncement] = useState('')
-  // Issue #848: the one-time "tell you when a timer finishes?" ask.
-  const [askNotify, setAskNotify] = useState(false)
   // The cook sessions on record, for the chips' links back to a cook.
   const [sessions, setSessions] = useState<{
     meal: MealCookSession | null
@@ -296,14 +288,9 @@ export default function TimerDock() {
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null
     observer?.observe(el)
     return () => observer?.disconnect()
-  }, [hasTimers, expanded, askNotify])
+  }, [hasTimers, expanded])
   useEffect(() => {
     return () => document.documentElement.style.setProperty('--timer-dock-h', '0px')
-  }, [])
-
-  const allowNotifications = useCallback(async () => {
-    setAskNotify(false)
-    await requestNotificationPermission()
   }, [])
 
   // Completion feedback (vibration, the live-region announcement) is
@@ -324,21 +311,18 @@ export default function TimerDock() {
     function handleStarted(event: Event) {
       const { label } = (event as CustomEvent<{ id: string; label: string }>).detail
       announce(`${label} timer started`)
-      // A timer start is a tap: the moment the browser lets audio be unlocked, and
-      // the moment to ask (once, ever) whether to notify when a timer finishes.
-      unlockAudio()
-      if (shouldAskForNotifications()) {
-        markNotificationAsked()
-        setAskNotify(true)
-      }
     }
     function handleCompleted(event: Event) {
       const { id, label } = (event as CustomEvent<{ id: string; label: string }>).detail
       announce(`${label} timer finished`)
       vibrateOnComplete()
-      notifyTimerDone(label)
-      chimes.current.get(id)?.()
-      chimes.current.set(id, startChime())
+      // Opt-in only (Profile > Timer sound): off, nothing below runs, no audio
+      // context is ever created and no notification is shown.
+      if (isTimerSoundEnabled()) {
+        notifyTimerDone(label)
+        chimes.current.get(id)?.()
+        chimes.current.set(id, startChime())
+      }
     }
     window.addEventListener(TIMER_STARTED_EVENT, handleStarted)
     window.addEventListener(TIMER_COMPLETED_EVENT, handleCompleted)
@@ -377,27 +361,6 @@ export default function TimerDock() {
           data-testid="timer-dock"
           data-raised={raised ? 'true' : 'false'}
         >
-          {askNotify && (
-            <div
-              role="group"
-              aria-label="Timer notifications"
-              data-testid="timer-notify-ask"
-              className="pointer-events-auto flex max-w-full items-center gap-1 rounded-full py-1 pl-4 pr-1 text-xs font-bold text-[color:var(--color-text)]"
-              style={{
-                background: 'var(--color-bg)',
-                border: '2px solid var(--color-text)',
-                boxShadow: '3px 3px 0 var(--color-primary-dark)',
-              }}
-            >
-              <span className="min-w-0">Get a heads-up when a timer finishes?</span>
-              <button type="button" onClick={allowNotifications} className={CONTROL_BASE}>
-                <span className={KEY_FACE}>Allow</span>
-              </button>
-              <button type="button" onClick={() => setAskNotify(false)} className={CONTROL_BASE}>
-                <span className={KEY_FACE}>Not now</span>
-              </button>
-            </div>
-          )}
           <motion.div
             layout
             className={
