@@ -3,10 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell } from '@phosphor-icons/react/dist/ssr'
+import { Bell, X } from '@phosphor-icons/react/dist/ssr'
 import { useMotionConfig } from '@/lib/motion'
 import { useInboxEntries } from '@/hooks/useInboxEntries'
-import { useCookingTimers } from '@/lib/useCookingTimers'
 import type { InboxEntry, InboxTier } from '@/lib/inbox-helpers'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 
@@ -36,11 +35,11 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const { entries, overflowCount, loading, error, refresh } = useInboxEntries()
-  // Issue #496's tap-target table: "timer → dismiss". Dismissal goes through
-  // the real Spec B.3 store directly — dismissing here also clears the
-  // timer from the dock (`TimerDock.tsx`), since both read the same store.
-  const { dismiss: dismissTimer } = useCookingTimers()
+  // Every entry can be dismissed (issue #906). A timer goes through the real
+  // Spec B.3 store, so dismissing here also clears it from the dock
+  // (`TimerDock.tsx`); anything else is remembered per user, keyed to the
+  // entry's current state, and never changes pantry or grocery data.
+  const { entries, overflowCount, loading, error, refresh, dismiss, dismissAll } = useInboxEntries()
   // Fixed-position top offset, measured from the bell button each time it
   // opens. The dropdown is anchored to the *viewport's* right edge (see the
   // `right-4` below), not to the bell button's own edge — the bell usually
@@ -112,6 +111,8 @@ export default function NotificationBell() {
   // let a failed refresh show "Couldn't check right now" with a leftover
   // "and N more" underneath it (#496 review round 5).
   const showOverflowFooter = !loading && !error && entries.length > 0 && overflowCount > 0
+  // "Clear all" is for two or more entries (the hidden "and N more" count too).
+  const showClearAll = !loading && !error && count >= 2
 
   return (
     <div className="relative" ref={containerRef}>
@@ -187,10 +188,19 @@ export default function NotificationBell() {
             role="region"
             aria-labelledby="notification-bell-heading"
           >
-            <div className="px-4 py-3 border-b border-[var(--color-border)]">
+            <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center justify-between gap-2">
               <p id="notification-bell-heading" className="text-sm font-bold text-[var(--color-text)]">
                 Notifications
               </p>
+              {showClearAll && (
+                <button
+                  type="button"
+                  onClick={dismissAll}
+                  className="-my-2 min-h-[44px] px-2 text-xs font-extrabold text-[var(--color-primary-dark)] underline underline-offset-2"
+                >
+                  Clear all
+                </button>
+              )}
             </div>
 
             <div className="max-h-[340px] overflow-y-auto overscroll-contain">
@@ -224,7 +234,7 @@ export default function NotificationBell() {
                       key={entry.id}
                       entry={entry}
                       onNavigate={() => setOpen(false)}
-                      onDismissTimer={dismissTimer}
+                      onDismiss={dismiss}
                     />
                   ))}
                 </ul>
@@ -246,56 +256,54 @@ export default function NotificationBell() {
 function InboxRow({
   entry,
   onNavigate,
-  onDismissTimer,
+  onDismiss,
 }: {
   entry: InboxEntry
   onNavigate: () => void
-  /** `useCookingTimers().dismiss` — only called for `kind: 'timer'` rows. */
-  onDismissTimer: (id: string) => void
+  /** `useInboxEntries().dismiss`: routes a timer to the timer store, anything else to the remembered record. */
+  onDismiss: (entry: InboxEntry) => void
 }) {
   const style = TIER_STYLE[entry.tier]
 
-  const icon = (
-    <span
-      aria-hidden="true"
-      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm"
-      style={{ background: style.bg, color: style.text }}
-    >
-      {entry.emoji}
-    </span>
+  const content = (
+    <>
+      <span
+        aria-hidden="true"
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm"
+        style={{ background: style.bg, color: style.text }}
+      >
+        {entry.emoji}
+      </span>
+      <span className="flex-1 text-sm text-[var(--color-text)]">{entry.copy}</span>
+    </>
   )
-
-  if (!entry.href) {
-    // Issue #496's tap-target table: "timer → dismiss" — a real button, not
-    // a static row. `timerId` is only absent if a non-timer entry somehow
-    // ships with `href: null`, which nothing in `inbox-helpers.ts` does
-    // today; guarded rather than asserted so a future no-href, no-dismiss
-    // kind doesn't crash here.
-    return (
-      <li>
-        <button
-          type="button"
-          onClick={() => entry.timerId && onDismissTimer(entry.timerId)}
-          disabled={!entry.timerId}
-          aria-label={`Dismiss: ${entry.copy}`}
-          className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[var(--color-bg)] transition-colors min-h-[44px]"
-        >
-          {icon}
-          <span className="flex-1 text-sm text-[var(--color-text)]">{entry.copy}</span>
-          <span className="text-xs font-semibold text-[var(--color-muted)] flex-shrink-0">Dismiss</span>
-        </button>
-      </li>
-    )
-  }
+  const contentClass =
+    'flex-1 min-w-0 pl-4 py-3 flex items-center gap-3 text-left min-h-[44px]'
 
   return (
-    <li>
-      <Link href={entry.href} onClick={onNavigate} className="block min-h-[44px]">
-        <div className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[var(--color-bg)] transition-colors">
-          {icon}
-          <span className="flex-1 text-sm text-[var(--color-text)]">{entry.copy}</span>
-        </div>
-      </Link>
+    <li className="flex items-center hover:bg-[var(--color-bg)] transition-colors">
+      {entry.href ? (
+        <Link href={entry.href} onClick={onNavigate} className={contentClass}>
+          {content}
+        </Link>
+      ) : (
+        <div className={contentClass}>{content}</div>
+      )}
+      {/* A 44 px tap target around a small keycap. */}
+      <button
+        type="button"
+        onClick={() => onDismiss(entry)}
+        aria-label={`Dismiss ${entry.copy}`}
+        data-testid="notification-dismiss"
+        className="group min-h-[44px] min-w-[44px] flex-shrink-0 flex items-center justify-center"
+      >
+        <span
+          aria-hidden="true"
+          className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-[var(--color-text)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-[0_2px_0_var(--color-text)] transition-[translate,box-shadow] group-active:translate-y-[1px] group-active:shadow-[0_1px_0_var(--color-text)] motion-reduce:transition-none"
+        >
+          <X size={12} weight="bold" />
+        </span>
+      </button>
     </li>
   )
 }

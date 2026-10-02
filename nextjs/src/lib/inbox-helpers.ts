@@ -45,18 +45,82 @@ export interface InboxEntry {
   emoji: string
   /** One line of copy, e.g. "Milk expired 2d ago". */
   copy: string
-  /** Tap target. Dismiss-only entries (timers) carry `href: null`. */
+  /** Tap target. Entries with no destination (timers) carry `href: null`. */
   href: string | null
   /** Sort key — lower sorts first (more urgent). Not rendered. */
   sortKey: number
   /**
    * The raw `useCookingTimers()` timer id, present only on `kind: 'timer'`
-   * entries — what the dismiss button (`NotificationBell.tsx`) passes to the
-   * real store's `dismiss()`. Absent on every other kind: nothing else in
-   * the hub is dismissable, per the issue's tap-target table ("timer →
-   * dismiss", everything else navigates).
+   * entries — what the hook passes to the real timer store's `dismiss()`.
+   * Timers are the one kind dismissed through that store (so the timer dock
+   * sees it too); every other kind is dismissed with a remembered record
+   * (`dismissals` below, issue #906).
    */
   timerId?: string
+  /**
+   * The state this entry stands for (issue #906): a dismissal is remembered
+   * against it, so a changed state is a new reason and the entry comes back.
+   * Absent means "anything else": the entry's copy.
+   */
+  fingerprint?: string
+}
+
+/**
+ * Remembered dismissals (issue #906): entry id to the fingerprint it was
+ * dismissed with. Persistence lives in `lib/inbox-dismissals-store.ts`.
+ */
+export type InboxDismissals = Record<string, string>
+
+/** The fingerprint a dismissal of `entry` is stored (and later compared) with. */
+export function entryFingerprint(entry: InboxEntry): string {
+  return entry.fingerprint ?? entry.copy
+}
+
+/**
+ * Is `entry` hidden by a remembered dismissal? Same id and same fingerprint,
+ * except the grocery pointer, whose fingerprint is its count: it stays hidden
+ * until the count goes *up* past what was dismissed.
+ */
+export function isEntryDismissed(entry: InboxEntry, dismissals: InboxDismissals): boolean {
+  if (entry.kind === 'timer') return false // the timer store owns these
+  const stored = dismissals[entry.id]
+  if (stored === undefined) return false
+  if (entry.kind === 'grocery') return Number(entryFingerprint(entry)) <= Number(stored)
+  return stored === entryFingerprint(entry)
+}
+
+/**
+ * Tidy the remembered record against the full, undismissed entry list: forget a
+ * dismissal whose entry is gone (so it shows again when it next has a reason)
+ * or whose state has moved on, and lower the grocery bar to a count that
+ * dropped (so the next rise past it shows). `groceryKnown` is false while the
+ * grocery count is still unknown, so its dismissal is left alone rather than
+ * forgotten for want of data. Returns the same record when nothing changed.
+ */
+export function reconcileDismissals(
+  dismissals: InboxDismissals,
+  allEntries: InboxEntry[],
+  { groceryKnown }: { groceryKnown: boolean },
+): InboxDismissals {
+  const byId = new Map(allEntries.map((e) => [e.id, e]))
+  const next: InboxDismissals = {}
+  let changed = false
+  for (const [id, stored] of Object.entries(dismissals)) {
+    const entry = byId.get(id)
+    if (!entry) {
+      if (id === 'grocery' && !groceryKnown) next[id] = stored
+      else changed = true
+    } else if (entry.kind === 'grocery') {
+      const lowered = Math.min(Number(entryFingerprint(entry)), Number(stored))
+      next[id] = String(lowered)
+      if (next[id] !== stored) changed = true
+    } else if (entryFingerprint(entry) === stored) {
+      next[id] = stored
+    } else {
+      changed = true
+    }
+  }
+  return changed ? next : dismissals
 }
 
 /** Minimal recipe shape the cook-nudge needs — avoids importing the full `Recipe` type. */
@@ -81,15 +145,19 @@ export interface InboxSourceData {
   timers?: InboxTimerSource[]
   /** Present only once Spec B.5 ships a `/grocery` route + count; omit when it doesn't exist. */
   groceryCount?: number | null
+  /** Remembered dismissals (issue #906); omit for "nothing dismissed". */
+  dismissals?: InboxDismissals
 }
 
 export interface InboxDerivation {
-  /** Capped, ordered, ready to render. */
+  /** Undismissed, capped, ordered, ready to render. */
   entries: InboxEntry[]
-  /** Total entries before the cap — `entries.length` when nothing overflowed. */
+  /** Total undismissed entries before the cap — `entries.length` when nothing overflowed. */
   totalCount: number
   /** `totalCount - INBOX_CAP`, floored at 0 — the "and N more" line. */
   overflowCount: number
+  /** Every entry the data gives rise to, dismissed or not, uncapped, in order: what "Clear all" dismisses and what the record is reconciled against. */
+  allEntries: InboxEntry[]
 }
 
 function pluralDays(n: number): string {
@@ -130,6 +198,8 @@ function expiredEntry(item: EnrichedPantryItem, daysUntil: number): InboxEntry {
     tier: 'urgent',
     emoji: '⏰',
     copy: `${item.name} expired ${pluralDays(daysAgo)} ago`,
+    // The expiry date, not the copy: "2d ago" changes every day, a restock does not.
+    fingerprint: item.expiry_date ?? '',
     href: cookThisHref(item.name, item.expiry_date),
     // Most-overdue first: more negative daysUntil sorts first within this tier.
     sortKey: SORT_BUCKET.expired + daysUntil,
@@ -147,6 +217,7 @@ function expiringEntry(item: EnrichedPantryItem, daysUntil: number): InboxEntry 
     tier: daysUntil === 0 ? 'warning' : 'info',
     emoji: daysUntil === 0 ? '⚠️' : '🕒',
     copy,
+    fingerprint: item.expiry_date ?? '',
     href: cookThisHref(item.name, item.expiry_date),
     sortKey: SORT_BUCKET.expiring + daysUntil,
   }
@@ -203,6 +274,8 @@ function groceryEntry(count: number): InboxEntry {
     tier: 'info',
     emoji: '🛒',
     copy: `${count} item${count === 1 ? '' : 's'} on your grocery list`,
+    // The count: a dismissal holds until it goes up (`isEntryDismissed`).
+    fingerprint: String(count),
     href: '/grocery',
     sortKey: SORT_BUCKET.grocery,
   }
@@ -287,7 +360,9 @@ export function deriveInboxEntries(data: InboxSourceData, now: Date = new Date()
     const latest = latestCookedAt(data.recipes)
     const daysSinceCook = latest ? Math.floor((today.getTime() - latest.getTime()) / 86_400_000) : null
     if (daysSinceCook === null || daysSinceCook > COOK_NUDGE_DAYS) {
-      all.push(cookNudgeEntry())
+      // Keyed by the last cook: it stays dismissed until a cook resets the
+      // clock and the threshold passes again (issue #906).
+      all.push({ ...cookNudgeEntry(), fingerprint: latest ? latest.toISOString() : 'never' })
     }
   }
 
@@ -297,9 +372,14 @@ export function deriveInboxEntries(data: InboxSourceData, now: Date = new Date()
 
   all.sort((a, b) => a.sortKey - b.sortKey)
 
-  const totalCount = all.length
-  const entries = all.slice(0, INBOX_CAP)
+  // Dismissed entries are filtered out *before* the cap, so they neither count
+  // nor hold one of the ten visible slots (issue #906).
+  const dismissals = data.dismissals ?? {}
+  const undismissed = all.filter((e) => !isEntryDismissed(e, dismissals))
+
+  const totalCount = undismissed.length
+  const entries = undismissed.slice(0, INBOX_CAP)
   const overflowCount = Math.max(0, totalCount - INBOX_CAP)
 
-  return { entries, totalCount, overflowCount }
+  return { entries, totalCount, overflowCount, allEntries: all }
 }

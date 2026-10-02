@@ -27,7 +27,7 @@
  * fetched above. `undefined` (feature absent) until the user and pantry are
  * known.
  */
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPantryItems } from '@/lib/api/pantry'
 import { countToBuy, regenerateGroceryList } from '@/lib/grocery'
@@ -37,17 +37,31 @@ import {
   readGroceryRaw,
   subscribeGrocery,
 } from '@/lib/grocery-store'
+import {
+  addInboxDismissals,
+  parseInboxDismissals,
+  readInboxDismissalsRaw,
+  saveInboxDismissals,
+  subscribeInboxDismissals,
+} from '@/lib/inbox-dismissals-store'
 import { fetchUserId } from '@/hooks/useGroceryCount'
 import { fetchRecipeCookMeta } from '@/lib/api/recipes'
 import { useCookingTimers } from '@/lib/useCookingTimers'
 import {
   deriveInboxEntries,
+  entryFingerprint,
+  reconcileDismissals,
   type InboxDerivation,
+  type InboxDismissals,
+  type InboxEntry,
   type InboxSourceData,
   type InboxTimerSource,
 } from '@/lib/inbox-helpers'
 
-const EMPTY: InboxDerivation = { entries: [], totalCount: 0, overflowCount: 0 }
+const EMPTY: InboxDerivation = { entries: [], totalCount: 0, overflowCount: 0, allEntries: [] }
+
+/** Who the dismissals belong to when the user can't be identified: one shared bucket, never a crash. */
+const ANON_USER = 'anon'
 
 /** The network-fetched half of `InboxSourceData` — everything but `timers`/`groceryCount`. */
 type InboxNetworkSources = Pick<InboxSourceData, 'pantryItems' | 'recipes'>
@@ -77,6 +91,14 @@ export interface UseInboxEntriesResult extends InboxDerivation {
   error: boolean
   /** Re-run the fetch + derivation — called when the dropdown opens. */
   refresh: () => void
+  /**
+   * Dismiss one entry (issue #906): a timer through the timer store, anything
+   * else with a remembered record keyed to its current state. Never writes
+   * pantry or grocery data.
+   */
+  dismiss: (entry: InboxEntry) => void
+  /** Dismiss every entry, including any hidden behind "and N more". */
+  dismissAll: () => void
 }
 
 export function useInboxEntries(): UseInboxEntriesResult {
@@ -89,7 +111,7 @@ export function useInboxEntries(): UseInboxEntriesResult {
   // (the bell's dismiss button calls useCookingTimers().dismiss) or from the
   // cooking-timer dock (#495/#619); running/paused timers don't belong in the
   // inbox at all.
-  const { timers: liveTimers } = useCookingTimers()
+  const { timers: liveTimers, dismiss: dismissTimer } = useCookingTimers()
   const completedTimers = useMemo<InboxTimerSource[]>(
     () =>
       liveTimers
@@ -121,18 +143,76 @@ export function useInboxEntries(): UseInboxEntriesResult {
     [data, userId, groceryRaw],
   )
 
+  // Dismissals (issue #906): per user, read like the grocery list so a dismissal
+  // in one place (or tab) is seen everywhere. Until we know who the user is we
+  // don't know what they dismissed, so the bell stays in its loading state.
+  const dismissalsUser = user.isLoading ? '' : userId || ANON_USER
+  const getDismissalsSnapshot = useCallback(
+    () => readInboxDismissalsRaw(dismissalsUser),
+    [dismissalsUser],
+  )
+  const dismissalsRaw = useSyncExternalStore(
+    subscribeInboxDismissals,
+    getDismissalsSnapshot,
+    () => '',
+  )
+  const dismissals = useMemo<InboxDismissals>(
+    () => parseInboxDismissals(dismissalsRaw),
+    [dismissalsRaw],
+  )
+
   const derivation = useMemo<InboxDerivation | undefined>(
     () =>
-      data ? deriveInboxEntries({ ...data, timers: completedTimers, groceryCount }) : undefined,
-    [data, completedTimers, groceryCount],
+      data && !user.isLoading
+        ? deriveInboxEntries({ ...data, timers: completedTimers, groceryCount, dismissals })
+        : undefined,
+    [data, user.isLoading, completedTimers, groceryCount, dismissals],
   )
+  const allEntries = derivation?.allEntries
+
+  // Tidy the record once the feed is complete: forget dismissals whose entry is
+  // gone or has moved on, so a new reason shows. Skipped on a failed fetch, when
+  // the entry list would be a stale guess.
+  useEffect(() => {
+    if (!allEntries || isError || !dismissalsUser) return
+    const next = reconcileDismissals(dismissals, allEntries, {
+      groceryKnown: groceryCount !== undefined,
+    })
+    if (next !== dismissals) saveInboxDismissals(dismissalsUser, next)
+  }, [allEntries, isError, dismissals, dismissalsUser, groceryCount])
+
+  const dismiss = useCallback(
+    (entry: InboxEntry) => {
+      if (entry.kind === 'timer') {
+        if (entry.timerId) dismissTimer(entry.timerId)
+        return
+      }
+      if (dismissalsUser) addInboxDismissals(dismissalsUser, { [entry.id]: entryFingerprint(entry) })
+    },
+    [dismissTimer, dismissalsUser],
+  )
+
+  const dismissAll = useCallback(() => {
+    if (!allEntries) return
+    const additions: InboxDismissals = {}
+    for (const entry of allEntries) {
+      if (entry.kind === 'timer') {
+        if (entry.timerId) dismissTimer(entry.timerId)
+      } else {
+        additions[entry.id] = entryFingerprint(entry)
+      }
+    }
+    if (dismissalsUser) addInboxDismissals(dismissalsUser, additions)
+  }, [allEntries, dismissTimer, dismissalsUser])
 
   return {
     ...(derivation ?? EMPTY),
-    loading: isLoading,
+    loading: isLoading || user.isLoading,
     error: isError,
     refresh: () => {
       void refetch()
     },
+    dismiss,
+    dismissAll,
   }
 }
