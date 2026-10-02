@@ -45,7 +45,7 @@ async function stubNetwork(page: Page): Promise<Captured> {
   return captured
 }
 
-const TOUR_COPY = "Hi! I'm Bubbles, your kitchen assistant."
+const TOUR_COPY = "Hi! I'm Bubbly, your kitchen assistant."
 
 test.describe('first-run staples step (#853)', () => {
   test('adds exactly the ticked items, saves household size, then the tour starts', async ({

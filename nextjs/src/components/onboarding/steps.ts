@@ -19,7 +19,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'hero',
     selector: '[data-tour="hero"]',
-    copy: "Hi! I'm Bubbles, your kitchen assistant.",
+    copy: "Hi! I'm Bubbly, your kitchen assistant.",
     placement: 'below',
   },
   {

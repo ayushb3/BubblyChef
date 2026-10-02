@@ -174,7 +174,7 @@ describe('with a scan waiting', () => {
     await screen.findByRole('dialog')
     expect(screen.getByTestId('kitchen-wall')).toHaveAttribute(
       'aria-label',
-      expect.stringContaining('Bubbles is by the door'),
+      expect.stringContaining('Bubbly is by the door'),
     )
   })
 

@@ -195,11 +195,11 @@ describe('case 1: something in progress', () => {
 
     const c = await card()
     expect(screen.getByTestId('stove-steam')).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: /Bubbles is at the stove, cooking/ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Bubbly is at the stove, cooking/ })).toBeInTheDocument()
 
     fireEvent.click(within(c).getByRole('button', { name: 'I finished it' }))
     await waitFor(() => expect(screen.queryByTestId('stove-steam')).toBeNull())
-    expect(screen.getByRole('group', { name: /Bubbles is at the stove\./ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Bubbly is at the stove\./ })).toBeInTheDocument()
   })
 
   it('"I finished it" on a meal cook-along ends it in the scene too (#837)', async () => {

@@ -65,7 +65,7 @@ describe('ProfilePage mascot (#832)', () => {
     render(<QueryClientProvider client={new QueryClient()}>{jsx}</QueryClientProvider>)
 
     // BubblesMascot labels its image `Bubbles <state>`; a raw <img> says just "Bubbles".
-    const bubbles = screen.getByAltText('Bubbles happy')
+    const bubbles = screen.getByAltText('Bubbly happy')
     expect(bubbles).toHaveAttribute('width', '80')
     expect(bubbles).toHaveAttribute('height', '80')
     expect(bubbles.getAttribute('src')).toContain('bubbles-happy.png')

@@ -1,5 +1,5 @@
 /**
- * Issue #849 — which step Ask Bubbles reports. It used to read the Now card's
+ * Issue #849 — which step Ask Bubbly reports. It used to read the Now card's
  * own step, so with the simmer (step 3) running and the card showing step 4 as
  * "Next at ...", the overlay said "step 4". It reports the step the cook is
  * actually on: the running step an upcoming card is waiting on, else the card's.

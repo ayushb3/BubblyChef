@@ -89,7 +89,7 @@ describe('MealCookFinished — cook-flow visual language (issue #812)', () => {
       <MealCookFinished mealTitle="Pasta night" canDeduct onMarkCooked={jest.fn()} onFinishWithoutPantry={jest.fn()} />,
     )
     expect(screen.getByTestId('meal-cook-finished')).toHaveAttribute('data-pixel-panel')
-    expect(container.querySelector('img[alt="Bubbles celebrate"]')).not.toBeNull()
+    expect(container.querySelector('img[alt="Bubbly celebrate"]')).not.toBeNull()
   })
 
   it('renders Mark meal as cooked as the primary keycap and Skip pantry update as a secondary keycap', () => {

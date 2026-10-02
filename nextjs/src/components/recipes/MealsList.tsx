@@ -36,8 +36,8 @@ export default function MealsList() {
         mascotState="surprised"
         headerLabel="Meals"
         headline="No saved meals yet"
-        subline="Ask Chef Bubbly what's for dinner, and save a meal to see it here."
-        ctaLabel="Chat with Bubbles"
+        subline="Ask Bubbly what's for dinner, and save a meal to see it here."
+        ctaLabel="Chat with Bubbly"
         ctaEmoji="💬"
         onCta={() => router.push('/chat')}
       />

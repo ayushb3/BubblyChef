@@ -10,7 +10,7 @@ import { useMotionConfig, useSteppedFrame } from '@/lib/motion'
  * bubble holds three stepped pixel dots, one raised at a time over 3 frames of
  * 160 ms (a small piece of the world, so it steps rather than glides). Under
  * reduced motion the dots hold the board's still pose. The bubble is a polite
- * status region named "Bubbles is typing".
+ * status region named "Bubbly is typing".
  */
 export default function TypingIndicator() {
   const { reduced } = useMotionConfig()
@@ -54,7 +54,7 @@ export default function TypingIndicator() {
               />
             ))}
           </svg>
-          <span className="sr-only">Bubbles is typing</span>
+          <span className="sr-only">Bubbly is typing</span>
         </span>
       </div>
     </motion.div>
