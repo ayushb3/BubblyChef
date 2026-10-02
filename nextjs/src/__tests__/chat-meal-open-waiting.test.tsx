@@ -86,6 +86,8 @@ const OPTIONS_MESSAGE: ChatMessage = {
 let mockMessages: ChatMessage[] = []
 let mockStreaming = false
 const sendMessage = jest.fn()
+const startNewChat = jest.fn()
+const dismissFailedSend = jest.fn()
 
 jest.mock('@/hooks/useChat', () => ({
   useChat: () => ({
@@ -98,7 +100,9 @@ jest.mock('@/hooks/useChat', () => ({
     sendChipMessage: jest.fn(),
     sendConfirmChoice: jest.fn(),
     cancelStream: jest.fn(),
-    startNewChat: jest.fn(),
+    startNewChat,
+    dismissFailedSend,
+    retryFailedSend: jest.fn(),
     approveProposal: jest.fn(),
     rejectProposal: jest.fn(),
     updateProposalActions: jest.fn(),
@@ -231,5 +235,74 @@ describe('meal open waiting card in chat (issue #887)', () => {
     render(ui(), { wrapper: QueryWrapper })
     expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
     expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
+  })
+
+  async function pickAndWait(rerender: (ui: React.ReactElement) => void) {
+    fireEvent.click(await screen.findByRole('listitem', { name: 'Pick Lemon chicken dinner' }))
+    mockMessages = [OPTIONS_MESSAGE, userMsg('Lemon chicken dinner'), emptyAssistant]
+    mockStreaming = true
+    rerender(ui())
+    await screen.findByTestId('meal-open-waiting')
+  }
+
+  it('a failed pick, dismissed, then an ordinary message shows the dots, not the pick card', async () => {
+    const { rerender } = render(ui(), { wrapper: QueryWrapper })
+    await pickAndWait(rerender)
+
+    // The pick fails: the turn settles as a failed send with Retry / Dismiss.
+    mockStreaming = false
+    mockMessages = [
+      OPTIONS_MESSAGE,
+      userMsg('Lemon chicken dinner'),
+      {
+        ...emptyAssistant,
+        content: 'Something went wrong.',
+        sendFailure: { text: 'Lemon chicken dinner', context: { meal_option_id: 'opt_1' } },
+      } as ChatMessage,
+    ]
+    rerender(ui())
+    await waitFor(() => expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument())
+
+    dismissFailedSend.mockReturnValue('Lemon chicken dinner')
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss/ }))
+    expect(dismissFailedSend).toHaveBeenCalledWith('assistant-2')
+
+    // The failed pair is gone; the user now sends an ordinary message, even one
+    // with the very same text as the option title.
+    mockMessages = [OPTIONS_MESSAGE, userMsg('Lemon chicken dinner'), emptyAssistant]
+    mockStreaming = true
+    rerender(ui())
+
+    expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
+    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+  })
+
+  it('New Chat clears the pick', async () => {
+    const { rerender } = render(ui(), { wrapper: QueryWrapper })
+    await pickAndWait(rerender)
+
+    mockStreaming = false
+    fireEvent.click(screen.getByRole('button', { name: /New Chat/i }))
+    expect(startNewChat).toHaveBeenCalledTimes(1)
+    mockMessages = []
+    rerender(ui())
+
+    // A fresh thread that happens to reuse the old ids and text: an ordinary turn.
+    mockMessages = [OPTIONS_MESSAGE, userMsg('Lemon chicken dinner'), emptyAssistant]
+    mockStreaming = true
+    rerender(ui())
+    expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
+    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+  })
+
+  it('only the turn right after the tapped message is the pick: a different message there gets the dots', async () => {
+    const { rerender } = render(ui(), { wrapper: QueryWrapper })
+    fireEvent.click(await screen.findByRole('listitem', { name: 'Pick Lemon chicken dinner' }))
+    // The thread's next turn is something other than the pick (different text).
+    mockMessages = [OPTIONS_MESSAGE, userMsg('Something else entirely'), emptyAssistant]
+    mockStreaming = true
+    rerender(ui())
+    expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
+    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
   })
 })

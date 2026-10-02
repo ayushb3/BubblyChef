@@ -248,9 +248,11 @@ function ChatSurface() {
    * writes nothing; the card's button is still the one confirm.
    */
   const [mealSaveFocus, setMealSaveFocus] = useState<Record<string, number>>({})
-  // The option a meal-option tap picked and the thread index its user message
-  // takes (issue #887): the waiting card shows only for that turn.
-  const [pickedOption, setPickedOption] = useState<{ option: MealOption; userIndex: number } | null>(null)
+  // The option a meal-option tap picked, and the id of the message it was tapped
+  // on (issue #887): the waiting card shows only for the turn that directly
+  // follows that message and carries the option's title. Cleared on new chat, on
+  // dismissing a failed send, and once the turn settles.
+  const [pickedOption, setPickedOption] = useState<{ option: MealOption; afterId: string } | null>(null)
   /** In-flight POST promises keyed by msgId — the double-creation guard Open and Save share. */
   const mealCreateInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
@@ -494,6 +496,7 @@ function ChatSurface() {
     }
     // Fresh empty state, fresh clock read for the starter-pill ranker.
     setMountedAt(new Date())
+    setPickedOption(null)
     startNewChat()
   }
 
@@ -638,7 +641,8 @@ function ChatSurface() {
   const handlePickMealOption = (option: MealOption) => {
     // Remember which option this turn picked, and where its user message will
     // sit, so the wait can name it (issue #887). Nothing else is sent or fetched.
-    setPickedOption({ option, userIndex: messages.length })
+    const last = messages[messages.length - 1]
+    setPickedOption(last ? { option, afterId: last.id } : null)
     sendMessage(option.title, { meal_option_id: option.option_id })
   }
 
@@ -769,6 +773,7 @@ function ChatSurface() {
         // The unsent text goes back in the input (#847), unless the user has
         // already started typing something else there.
         const text = dismissFailedSend(msgId)
+        setPickedOption(null)
         if (text) setInput((prev) => prev || text)
         inputRef.current?.focus()
         break
@@ -820,13 +825,23 @@ function ChatSurface() {
   const showTypingIndicator =
     isStreaming && lastMsg?.role === 'assistant' && !lastMsg.content
 
-  // The reply to a meal-option tap is the one being waited on: user turn at the
-  // remembered index, then the empty assistant turn as the last message.
+  // The reply to a meal-option tap is the one being waited on: the pick's user
+  // turn (the one right after the message it was tapped on, with the option's
+  // title) followed by the empty assistant turn that is the last message.
+  const pickAt = pickedOption ? messages.findIndex((m) => m.id === pickedOption.afterId) : -1
+  // A pick is spent once its turn has settled, or when the message it was tapped
+  // on is gone (new chat, a restored thread). React's adjust-state-while-rendering
+  // pattern, so no stale pick can outlive its turn.
+  if (pickedOption && (pickAt < 0 || (!isStreaming && messages.length >= pickAt + 3))) {
+    setPickedOption(null)
+  }
+  const pickTurn = pickedOption && pickAt >= 0 ? messages[pickAt + 1] : undefined
   const waitingOption =
     showTypingIndicator &&
     pickedOption &&
-    messages.length === pickedOption.userIndex + 2 &&
-    messages[pickedOption.userIndex]?.role === 'user'
+    pickTurn?.role === 'user' &&
+    pickTurn.content === pickedOption.option.title &&
+    messages.length === pickAt + 3
       ? pickedOption.option
       : null
 

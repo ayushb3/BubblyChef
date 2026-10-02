@@ -72,7 +72,7 @@ export default function SideAlternativesRow({
               Bubbly is thinking of sides…
             </p>
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Loading alternatives">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
