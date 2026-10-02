@@ -17,6 +17,11 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/api/scan')
 
+// The count hook reads the user and pantry (React Query); its own behaviour is
+// pinned elsewhere. Here only what the page does with the number matters.
+let groceryCount = { count: 0, loading: false }
+jest.mock('@/hooks/useGroceryCount', () => ({ useGroceryCount: () => groceryCount }))
+
 const mockUploadReceipt = scanApi.uploadReceipt as jest.MockedFunction<typeof scanApi.uploadReceipt>
 
 function renderPage() {
@@ -30,11 +35,34 @@ function renderPage() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  groceryCount = { count: 0, loading: false }
   global.URL.createObjectURL = jest.fn(() => 'blob:mock')
   global.URL.revokeObjectURL = jest.fn()
 })
 
 describe('/scan grocery list entry (#905)', () => {
+  it('names how many items are to buy, "1 item" in the singular', () => {
+    groceryCount = { count: 3, loading: false }
+    const { unmount } = renderPage()
+    expect(screen.getByRole('button', { name: /grocery list.*3 items/i })).toBeInTheDocument()
+    unmount()
+
+    groceryCount = { count: 1, loading: false }
+    renderPage()
+    expect(screen.getByRole('button', { name: /grocery list.*1 item$/i })).toBeInTheDocument()
+  })
+
+  it('shows no count while it loads or when the list is empty', () => {
+    groceryCount = { count: 0, loading: false }
+    const { unmount } = renderPage()
+    expect(screen.getByRole('button', { name: /grocery list$/i })).toBeInTheDocument()
+    unmount()
+
+    groceryCount = { count: 5, loading: true }
+    renderPage()
+    expect(screen.getByRole('button', { name: /grocery list$/i })).toBeInTheDocument()
+  })
+
   it('shows a Grocery list key below the upload area that opens /grocery', () => {
     renderPage()
     const key = screen.getByRole('button', { name: /grocery list/i })

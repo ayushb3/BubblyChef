@@ -9,6 +9,7 @@ import ProfileHeaderButton from '@/components/layout/ProfileHeaderButton'
 import ScanDropzone, { ScanHandoffPanel, ScanProcessingPanel } from '@/components/scan/ScanDropzone'
 import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
+import { useGroceryCount } from '@/hooks/useGroceryCount'
 import { useScanHandOff } from '@/hooks/useScanHandOff'
 import { uploadReceipt, ScanError } from '@/lib/api/scan'
 import {
@@ -35,6 +36,7 @@ type ScanPageState = 'upload' | 'processing' | 'handoff'
 export default function ScanPage() {
   const handOff = useScanHandOff()
   const router = useRouter()
+  const groceryCount = useGroceryCount()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const [state, setState] = useState<ScanPageState>('upload')
@@ -161,6 +163,11 @@ export default function ScanPage() {
               <div className="mt-4 flex justify-center">
                 <SpringButton variant="secondary" onClick={() => router.push('/grocery')}>
                   <span aria-hidden="true">🛒</span> Grocery list
+                  {!groceryCount.loading && groceryCount.count > 0 && (
+                    <span className="tabular-nums">
+                      · {groceryCount.count} {groceryCount.count === 1 ? 'item' : 'items'}
+                    </span>
+                  )}
                 </SpringButton>
               </div>
 
