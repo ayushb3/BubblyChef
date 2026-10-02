@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useBubbles } from '@/lib/api/bubbles'
+import { isBubbleReactionClaimed } from '@/lib/bubble-reaction'
 import { useMotionConfig } from '@/lib/motion'
 
 interface Pop {
@@ -30,6 +31,12 @@ interface Pop {
  * balance is always treated as an initial load rather than a delta off the
  * previous user's leftover number (issue #525 review).
  *
+ * Silent on the kitchen home while the header counter is on screen (issue #843):
+ * the counter's own anchored "+N" tag is the reaction there, and two chips per
+ * award read as a bug. With the home scrolled so the counter is out of view, this
+ * pop shows as usual, so an award always has one visible "+N". See
+ * `lib/bubble-reaction.ts`.
+ *
  * Pinned top-right, just under the app header — the same corner the kitchen
  * scene's own 🫧 balance pill occupies on home, so the pop reads as feeding
  * that balance rather than floating disconnected from it. `top-16` clears
@@ -55,7 +62,12 @@ export default function BubblePop() {
       return
     }
     const lastSeen = lastSeenRef.current
-    if (lastSeen !== null && balance > lastSeen) {
+    // One award moment per award (#843): while the header counter is on screen
+    // showing its own "+N" (the kitchen home), that tag is the reaction and this
+    // stays quiet. Asked at the moment of the award, so a home scrolled past its
+    // header still gets this pop. The balance is still recorded below, so the next
+    // award is a true delta.
+    if (lastSeen !== null && balance > lastSeen && !isBubbleReactionClaimed()) {
       const delta = balance - lastSeen
       setPop({ key: Date.now(), delta })
       if (timerRef.current) clearTimeout(timerRef.current)

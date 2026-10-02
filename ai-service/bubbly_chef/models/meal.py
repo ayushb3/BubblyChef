@@ -338,6 +338,10 @@ class MealOptionLLM(BaseModel):
 
     title: str = Field(description="Short, appetizing meal title")
     blurb: str | None = Field(default=None, description="One-sentence description")
+    cuisine: str | None = Field(
+        default=None,
+        description="The main dish's cuisine in one or two words (e.g. Italian, Thai, American)",
+    )
     dishes: list[MealDishOutlineLLM] = Field(
         default_factory=list, description="One main first, then 0-2 sides fitted to the main"
     )

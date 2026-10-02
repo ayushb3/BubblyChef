@@ -113,6 +113,8 @@ class WorkflowState(TypedDict, total=False):
     raw_llm_output: str
     parsed_items: list[dict[str, Any]]
     parse_error: str | None
+    # Document-kind signal from the receipt parse (issue #856). Absent = a receipt.
+    is_receipt: bool
 
     # ==========================================================================
     # Normalized Items
@@ -148,6 +150,11 @@ class WorkflowState(TypedDict, total=False):
     # True only when classify_intent resolved a pinned-session turn to a DIFFERENT
     # already-offered idea; dispatch builds a new card instead of refining.
     repick_different_idea: bool
+    # Issue #846. True only when classify_intent read a typed message as a change to the
+    # meal (or the options) already on screen ("something quicker, no butter"); the meal
+    # option stage then inherits the retained constraints and servings, the way a pill
+    # tap does, and applies this turn's change on top. Per-turn, never persisted.
+    meal_refinement: bool
     # Issue #544. `constraints_extracted` is set by extract_recipe_constraints
     # (the direct card path) so research_recipe knows extract already combined
     # the stored diet with this turn's message; `dietary_set_aside` is the

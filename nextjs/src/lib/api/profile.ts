@@ -3,6 +3,8 @@
  * route (issue #394: wire up the dietary preference chips for real).
  */
 
+import { createClient } from '@/lib/supabase/client'
+import { coerceHouseholdSize } from '@/lib/household'
 import type { ExpiryPriority } from '@/lib/expiry-priority'
 
 /**
@@ -67,5 +69,47 @@ export async function updateFoodExclusions(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Failed to save' }))
     throw new Error(err.error ?? `Failed to save: ${res.status}`)
+  }
+}
+
+/**
+ * Persist the caller's household size, their default servings (issue #853).
+ *
+ * Stored in the auth user's `user_metadata` (not `user_profiles`): a guest has
+ * no profile row, and the first-run step is mostly shown to guests. See
+ * `lib/household.ts`. Rejects so the caller can show the failure.
+ */
+export async function saveHouseholdSize(size: number): Promise<void> {
+  const { error } = await createClient().auth.updateUser({ data: { household_size: size } })
+  if (error) throw new Error(error.message || 'Could not save household size')
+}
+
+/**
+ * Record that the first-run staples step has been seen (done or skipped), so it
+ * is not offered again on its own. Non-fatal by design, like the tour's flag: it
+ * is UX, not data, so a failed write never blocks the user.
+ */
+export async function markStaplesStepDone(): Promise<void> {
+  try {
+    const supabase = createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.auth.updateUser({ data: { staples_step_done: true } })
+  } catch {
+    // non-fatal
+  }
+}
+
+/** The household size saved on the caller's account, or null when none was set. */
+export async function fetchHouseholdSize(): Promise<number | null> {
+  try {
+    const {
+      data: { user },
+    } = await createClient().auth.getUser()
+    return coerceHouseholdSize(user?.user_metadata?.household_size)
+  } catch {
+    return null
   }
 }

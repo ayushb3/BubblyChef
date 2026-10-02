@@ -14,6 +14,7 @@ import { motion } from 'framer-motion'
 import SpringButton from '@/components/ui/SpringButton'
 import { useMotionConfig, useReactionVariants } from '@/lib/motion'
 import { addItemsToMyGroceryList } from '@/lib/grocery-add'
+import type { ManualLineInput } from '@/lib/grocery'
 import { ROLE_LABEL, type DishRole } from './dishPastel'
 
 /** Board frame: 2 px ink border, 16 px radius, surface fill, ink text. */
@@ -173,12 +174,18 @@ type AddState = 'idle' | 'adding' | 'added' | 'error'
  */
 export function ToBuyLine({
   items,
+  entries,
   onAdd = addItemsToMyGroceryList,
   note,
 }: {
   items: string[]
+  /**
+   * What the key adds, one per name in `items` and in the same order: each with
+   * its amount, unit and category (issue #868). Defaults to the bare names.
+   */
+  entries?: Array<string | ManualLineInput>
   /** Defaults to the user's browser grocery list. Rejects on failure. */
-  onAdd?: (items: string[]) => void | Promise<void>
+  onAdd?: (items: Array<string | ManualLineInput>) => void | Promise<void>
   /** Trailing note after the names, e.g. "the salad shares it". */
   note?: string
 }) {
@@ -199,7 +206,7 @@ export function ToBuyLine({
     if (state === 'adding' || state === 'added') return
     setState('adding')
     try {
-      await onAdd(items)
+      await onAdd(entries ?? items)
       setState('added')
     } catch {
       setState('error')

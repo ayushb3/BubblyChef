@@ -13,7 +13,9 @@
  */
 
 import { groceryFoodKey } from '@/lib/grocery'
-import type { MealToBuyDetail } from '@/lib/api/grocery'
+import type { ManualLineInput } from '@/lib/grocery'
+import type { MealToBuyDetail, MealToBuyItem } from '@/lib/api/grocery'
+import type { ChatRecipeData } from '@/types/chat'
 
 export interface DishIngredientNames {
   position: number
@@ -57,4 +59,63 @@ export function toBuyByDish(detail: MealToBuyDetail, dishes: DishIngredientNames
     })
   }
   return result
+}
+
+/**
+ * What goes on the grocery list for a meal's to-buy (issue #850): each item with
+ * the amount the meal lacks, its unit and its category, so a line reads "Feta
+ * (200 g)" in the dairy group instead of a bare name under "other". An older
+ * service sent no `items`: fall back to the bare names.
+ */
+export function groceryEntriesFromDetail(detail: MealToBuyDetail): Array<string | ManualLineInput> {
+  if (!detail.items) return detail.names
+  return detail.items.map(entryFromItem)
+}
+
+function entryFromItem(i: MealToBuyItem): ManualLineInput {
+  return { name: i.name, quantity: i.quantity, unit: i.unit, category: i.category ?? undefined }
+}
+
+/**
+ * position -> what a dish card's "Add to grocery list" key puts on the list
+ * (issue #868): the same entries the meal page's line adds (the service's name,
+ * amount, unit and category), in the same order as `toBuyByDish`'s names so the
+ * key adds exactly the foods the line lists. The amount is the meal's (the
+ * service sums a food shared by two dishes), not the dish's own share; the list
+ * keeps the first amount a line gets, so adding both dishes' cards never
+ * double-counts it. An older service sent no `items`: bare names, as
+ * `toBuyByDish` falls back to.
+ */
+export function toBuyEntriesByDish(
+  detail: MealToBuyDetail,
+  dishes: DishIngredientNames[],
+): Map<number, Array<string | ManualLineInput>> {
+  if (!detail.items) return attributeToBuy(detail.names, dishes)
+  const result = new Map<number, Array<string | ManualLineInput>>(dishes.map((d) => [d.position, []]))
+  for (const item of detail.items) {
+    for (const position of item.dishPositions) result.get(position)?.push(entryFromItem(item))
+  }
+  return result
+}
+
+/**
+ * A chat recipe card's missing foods as list entries (issue #868). The card is
+ * not a saved meal, so the meal-to-buy endpoint (which takes a meal id) can't be
+ * asked; the pantry grading already says which foods are missing
+ * (`ingredient_availability`), and the card's own ingredients say how much each
+ * needs. A missing food is one with nothing usable on hand, so the recipe amount
+ * is the amount to buy. No category: nothing on the card knows it, so the list
+ * files it under "other". Undefined while the recipe is ungraded.
+ */
+export function toBuyEntriesFromRecipe(recipe: ChatRecipeData): Array<string | ManualLineInput> | undefined {
+  if (!recipe.ingredient_availability) return undefined
+  const byName = new Map((recipe.ingredients ?? []).map((ing) => [ing.name.trim().toLowerCase(), ing]))
+  return recipe.ingredient_availability
+    .filter((a) => a.status === 'missing')
+    .map((a) => {
+      const ing = byName.get(a.name.trim().toLowerCase())
+      if (!ing) return a.name
+      const quantity = typeof ing.quantity === 'number' && Number.isFinite(ing.quantity) ? ing.quantity : null
+      return { name: ing.name, quantity, unit: quantity !== null ? (ing.unit ?? null) : null }
+    })
 }

@@ -33,6 +33,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useReducedMotion } from 'framer-motion'
 import PixelSheet from '@/components/ui/PixelSheet'
+import SpringButton from '@/components/ui/SpringButton'
 import { streamChatMessage } from '@/lib/api/chat'
 import { isRecipeAmendmentProposal, type ChatRequest } from '@/types/chat'
 import type { MealConstraints, MealCookIngredient } from '@/types/meals'
@@ -91,6 +92,12 @@ interface OverlayMessage {
   text: string
   amendment?: AmendmentState
 }
+
+/**
+ * Issue #849 — one-tap questions for a cook with messy hands. A tap sends the
+ * label as the question straight away; there is nothing to type or confirm.
+ */
+export const QUICK_PROMPTS = ['Is it done?', 'I burnt it', 'Swap an ingredient', 'How long left?'] as const
 
 // ---------------------------------------------------------------------------
 // Amendment card
@@ -260,8 +267,8 @@ export default function AskBubblesOverlay({
     }
   }, [])
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim()
+  const handleSend = useCallback(async (quickPrompt?: string) => {
+    const text = (quickPrompt ?? input).trim()
     if (!text || streaming) return
 
     setMessages((prev) => [...prev, { role: 'user', text }])
@@ -394,6 +401,22 @@ export default function AskBubblesOverlay({
       subtitle={pinned ? `Asking about ${pinned.title}` : `Asking about step ${stepN}`}
       footer={
         <>
+          {/* Issue #849 — one-tap prompts; a tap sends at once. */}
+          <div className="mb-3 flex flex-wrap gap-2" data-testid="ask-bubbles-quick-prompts">
+            {QUICK_PROMPTS.map((prompt) => (
+              <SpringButton
+                key={prompt}
+                variant="secondary"
+                size="sm"
+                disabled={streaming}
+                onClick={() => void handleSend(prompt)}
+                data-testid="ask-bubbles-quick-prompt"
+              >
+                {prompt}
+              </SpringButton>
+            ))}
+          </div>
+
           {/* Input row */}
           <div className="flex gap-2">
             <input

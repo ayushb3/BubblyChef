@@ -40,6 +40,12 @@ export interface BulkAddItem {
    * used as a fallback only when this is absent.
    */
   estimated_expiry?: boolean
+  /**
+   * Shelf-stable item (the first-run staples, issue #853): save it with no
+   * expiry rather than letting the server estimate one. Ignored when
+   * `expiry_date` is set.
+   */
+  no_expiry?: boolean
 }
 
 export interface BulkAddResult {
@@ -94,6 +100,9 @@ export async function resolvePantryItem(
     // The client's IANA zone (#550), not a date: the server keys a `rescue`
     // bubbles award on its own clock in the account's stored zone (#524).
     body: JSON.stringify({ outcome, tz: clientTimeZone() }),
+    // A deferred "Used it" (#851) can fire as the page closes; keepalive lets the
+    // request outlive it.
+    keepalive: true,
   })
 
   if (!res.ok) {

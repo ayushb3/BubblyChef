@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { planDinnerHref } from '@/lib/chat-seed'
@@ -11,11 +11,10 @@ import {
   placeLocation,
   type ExpiryFacet,
   summarizePlaces,
-  type KitchenStock,
   type PlaceKey,
-  type PlaceSummaries,
 } from '@/lib/kitchen/places'
-import { movePantryItems, resolvePantryItems } from '@/lib/api/pantry'
+import { movePantryItems, resolvePantryItems, updatePantryItem } from '@/lib/api/pantry'
+import { deferResolve, onResolveSettled, useDeferredResolves } from '@/lib/pantry-undo'
 import { addPantryItemToMyGroceryList } from '@/lib/grocery-add'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -35,6 +34,7 @@ import { incomingByPlace } from '@/lib/kitchen/pending-putaway'
 import HomeCardSlot from '@/components/kitchen/HomeCardSlot'
 import type { ExpiringItem } from '@/lib/kitchen/home-card'
 import { DEFAULT_EXPIRY_PRIORITY, type ExpiryPriority } from '@/lib/expiry-priority'
+import DinnerInput from '@/components/kitchen/DinnerInput'
 import KitchenHeader from '@/components/kitchen/KitchenHeader'
 import KitchenThemePicker from '@/components/kitchen/KitchenThemePicker'
 import KitchenThemeUnlockCard from '@/components/kitchen/KitchenThemeUnlockCard'
@@ -48,10 +48,6 @@ interface HomeData {
   tip: string | null
   /** True when the pantry has an expired item that hasn't been used up (issue #525). */
   hasUnusedExpired: boolean
-  /** Per-place counts for the wall; `null` until the pantry loads, and if it fails to. */
-  places: PlaceSummaries | null
-  /** What each place draws (category sprites and up to 3 wilting items); `null` like `places`. */
-  stock: KitchenStock | null
   /** Every pantry row, for the storage sheet; `null` until the pantry loads, and if it fails to. */
   items: EnrichedPantryItem[] | null
 }
@@ -104,8 +100,6 @@ export default function HeroHome({
     expiring: [],
     tip: null,
     hasUnusedExpired: false,
-    places: null,
-    stock: null,
     items: null,
   })
 
@@ -163,9 +157,7 @@ export default function HeroHome({
           tip: dashboardDaily?.tip?.text ?? null,
           hasUnusedExpired,
           // A failed pantry fetch is "unknown", not "empty": the wall then shows
-          // names only rather than claiming four empty places.
-          places: pantryRes.ok ? summarizePlaces(allItems) : null,
-          stock: pantryRes.ok ? kitchenStock(allItems) : null,
+          // names only rather than claiming four empty places (see `places`).
           items: pantryRes.ok ? allItems : null,
         })
       } catch {
@@ -194,15 +186,42 @@ export default function HeroHome({
   }, [])
 
   const eyebrow = clockReady ? kitchenEyebrow(new Date()) : ''
-  const {
-    totalCount,
-    expiring,
-    tip,
-    hasUnusedExpired,
-    places,
-    stock,
-    items,
-  } = data
+  const { totalCount: loadedCount, expiring, tip, hasUnusedExpired, items: loadedItems } = data
+
+  // "Used it" (#851): a row waiting out its undo window is hidden everywhere the
+  // home reads the pantry (the wall's counts and sprites, the storage sheet), as if
+  // it were already gone. Undo just stops hiding it. When the write lands, the
+  // row is dropped from the home's own copy before the id is released, so it never
+  // flashes back ahead of the re-read.
+  const deferred = useDeferredResolves()
+  const items = useMemo(() => {
+    if (!loadedItems || deferred.length === 0) return loadedItems
+    const hidden = new Set(deferred.map((d) => d.id))
+    return loadedItems.filter((i) => !hidden.has(i.id))
+  }, [loadedItems, deferred])
+  const totalCount =
+    loadedItems && items ? loadedCount - (loadedItems.length - items.length) : loadedCount
+  // `null` until the pantry loads, and if it fails to: unknown, not empty.
+  const places = useMemo(() => (items ? summarizePlaces(items) : null), [items])
+  // What each place draws (category sprites and up to 3 wilting items).
+  const stock = useMemo(() => (items ? kitchenStock(items) : null), [items])
+  useEffect(
+    () =>
+      onResolveSettled((event) => {
+        if (!event.ok) return
+        setData((d) => {
+          if (!d.items) return d
+          const gone = d.items.filter((i) => event.ids.includes(i.id)).length
+          return {
+            ...d,
+            items: d.items.filter((i) => !event.ids.includes(i.id)),
+            totalCount: Math.max(0, d.totalCount - gone),
+          }
+        })
+        reload()
+      }),
+    [reload],
+  )
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`
@@ -336,6 +355,14 @@ export default function HeroHome({
     return result
   }
 
+  // "Used it" on one row: queue it behind the undo window (`lib/pantry-undo`; the
+  // toast is `UndoToastHost`). "Used some": set the quantity that is left.
+  const usedUp = (item: EnrichedPantryItem) => deferResolve({ id: item.id, name: item.name }, 'used')
+  const setQuantity = async (item: EnrichedPantryItem, quantity: number) => {
+    await updatePantryItem(item.id, { quantity })
+    pantryChanged()
+  }
+
   const pantryStatus = loading ? 'loading' : items ? 'ready' : 'error'
 
   return (
@@ -367,6 +394,11 @@ export default function HeroHome({
         open={putAwayOpen}
         record={pending}
         onClose={() => setPutAwayOpen(false)}
+        onTryAnother={() => {
+          // Not a receipt (#856): the scan is dropped; back to the scan tab for another photo.
+          setPutAwayOpen(false)
+          setAddSheet({ tab: 'scan' })
+        }}
         onPutAway={(_count, hops) => {
           // The write succeeded: play the hop into place, then refresh the counts.
           setLanded(null)
@@ -385,6 +417,9 @@ export default function HeroHome({
           }}
         />
       )}
+
+      {/* A place to type straight away (#854); the door on the wall still works. */}
+      <DinnerInput />
 
       {/* Under the wall: the pantry count on the left, the streak (#524) and the
           theme picker trigger (#523) on the right. */}
@@ -478,6 +513,8 @@ export default function HeroHome({
         onAdd={(place) => setAddSheet({ tab: 'type', place })}
         onMove={movePantry}
         onResolve={resolvePantry}
+        onUsedUp={usedUp}
+        onSetQuantity={setQuantity}
         onAddToList={addPantryItemToMyGroceryList}
         onRetry={reload}
       />

@@ -25,6 +25,8 @@ import {
 } from '@/lib/cook-session'
 import { toRecipeIngredients } from '@/lib/cook-amendment'
 import SpringButton from '@/components/ui/SpringButton'
+import Chip from '@/components/ui/Chip'
+import { cookedLabel, searchRecipes } from '@/lib/recipe-search'
 
 interface RecipeBookProps {
   recipes: Recipe[]
@@ -37,23 +39,13 @@ interface RecipeBookProps {
   resumeRecipeId?: string | null
 }
 
-function scoreRecipe(r: Recipe, q: string): number {
-  const lq = q.toLowerCase()
-  let score = 0
-  const title = r.title.toLowerCase()
-  if (title.startsWith(lq)) score += 3
-  else if (title.includes(lq)) score += 2
-  if (r.tags?.some((t) => t.toLowerCase().includes(lq))) score += 1
-  if (r.cuisine?.toLowerCase().includes(lq)) score += 1
-  if (r.meal_type?.toLowerCase().includes(lq)) score += 1
-  if ((r.description ?? '').toLowerCase().includes(lq)) score += 0.5
-  return score
-}
-
 export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }: RecipeBookProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  // The Favourites chip (issue #855). Held here, not in the search bar, so it
+  // survives opening a recipe and coming back.
+  const [favouritesOnly, setFavouritesOnly] = useState(false)
   // The recipe opened in place (issue #801); null is the list. Edit and delete are
   // started from a card in the list or from the opened recipe, so they name their
   // own recipe instead of leaning on the opened one.
@@ -103,16 +95,16 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
     [recipes, favoriteOverrides, stepsOverrides],
   )
 
+  // Favourites first narrows the list, then the search ranks what is left. The
+  // overrides are already merged in, so a heart tapped in the filtered list drops
+  // the card at once.
   const filteredRecipes = useMemo(
     () =>
-      search
-        ? recipesWithOverrides
-            .map((r) => ({ r, score: scoreRecipe(r, search) }))
-            .filter(({ score }) => score > 0)
-            .sort((a, b) => b.score - a.score)
-            .map(({ r }) => r)
-        : recipesWithOverrides,
-    [recipesWithOverrides, search],
+      searchRecipes(
+        favouritesOnly ? recipesWithOverrides.filter((r) => r.is_favorite) : recipesWithOverrides,
+        search,
+      ),
+    [recipesWithOverrides, search, favouritesOnly],
   )
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? null
@@ -373,6 +365,7 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
       cuisine={r.cuisine}
       difficulty={r.difficulty}
       tags={r.tags}
+      cookedLabel={cookedLabel(r.times_cooked, r.last_cooked_at)}
       favorite={Boolean(r.is_favorite)}
       busy={mutating}
       onOpen={opts.open ? undefined : () => setSelectedId(r.id)}
@@ -558,9 +551,24 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
             {importButton}
           </div>
 
+          <div className="flex gap-2">
+            <Chip
+              emoji="❤️"
+              selected={favouritesOnly}
+              pressed={favouritesOnly}
+              onClick={() => setFavouritesOnly((on) => !on)}
+            >
+              Favourites
+            </Chip>
+          </div>
+
           {filteredRecipes.length === 0 ? (
             <p className="font-sans py-8 text-center text-sm text-[var(--color-muted)]">
-              No results for &ldquo;{search}&rdquo;
+              {search ? (
+                <>No results for &ldquo;{search}&rdquo;</>
+              ) : (
+                'No favourites yet. Tap the heart on a recipe to keep it here.'
+              )}
             </p>
           ) : (
             <>

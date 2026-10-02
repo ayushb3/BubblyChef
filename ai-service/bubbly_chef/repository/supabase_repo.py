@@ -16,8 +16,10 @@ from postgrest.types import JSON
 from supabase import Client, create_client
 
 from bubbly_chef.config import settings
+from bubbly_chef.domain.household import coerce_household_size
 from bubbly_chef.domain.lots import fresh_first_key, lot_base, lot_food_key, soonest_first_key
 from bubbly_chef.domain.normalizer import (
+    effective_unit,
     normalize_food_name,
     normalize_to_base_unit,
     normalize_unit,
@@ -387,6 +389,34 @@ def _plan_use_across_lots(
         plan = _plan_pantry_use(stocked[0], name, action)
         return ([] if plan.refusal else [(stocked[0], plan)]), plan.refusal
     return planned, refusal
+
+
+def merge_recent_titles(rows: list[dict[str, Any]], limit: int) -> list[str]:
+    """Titles from recipe/meal rows, newest first by `coalesce(last_cooked_at, created_at)`.
+
+    De-duplicated ignoring case and punctuation (the first, newest, spelling wins), blank
+    titles dropped, capped at `limit`. Rows from both tables go in together: a recipe cooked
+    last night and a meal saved last week sort into one recency order (issue #852).
+    """
+    ordered = sorted(
+        rows,
+        key=lambda r: str(r.get("last_cooked_at") or r.get("created_at") or ""),
+        reverse=True,
+    )
+    titles: list[str] = []
+    seen: set[str] = set()
+    for row in ordered:
+        title = row.get("title")
+        if not isinstance(title, str):
+            continue
+        key = re.sub(r"[\W_]+", " ", title.casefold()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        titles.append(title.strip())
+        if len(titles) >= limit:
+            break
+    return titles
 
 
 def _parse_meal_cook_timestamp(value: Any) -> datetime | None:
@@ -1060,6 +1090,43 @@ class SupabaseRepository:
             return []
         return [c for c, _ in Counter(cuisines).most_common(2)]
 
+    async def get_recent_dish_titles(self, user_id: str, limit: int = 10) -> list[str]:
+        """Titles of the user's most recently saved or cooked recipes and meals, newest
+        first (issue #852): the "dishes to avoid repeating" for the meal option prompt.
+
+        Non-draft rows only, from both `recipes` and `meals`. As in `get_recent_cuisines`,
+        PostgREST can't order by `coalesce(last_cooked_at, created_at)`, so each table is
+        read twice (top `limit` by `last_cooked_at`, top `limit` by `created_at`) and the
+        rows merged and re-sorted in Python; a row's `last_cooked_at` is never earlier than
+        its `created_at`, so the union always covers the true top `limit`. Scoped by
+        `user_id` on every read. Returns `[]` on any error. Never raises.
+        """
+        rows: list[dict[str, Any]] = []
+        try:
+            for table in ("recipes", "meals"):
+                base = (
+                    self.client.table(table)
+                    .select("title,created_at,last_cooked_at")
+                    .eq("user_id", user_id)
+                    .eq("is_draft", False)
+                )
+                cooked = (
+                    self.client.table(table)
+                    .select("title,created_at,last_cooked_at")
+                    .eq("user_id", user_id)
+                    .eq("is_draft", False)
+                    .not_.is_("last_cooked_at", "null")
+                    .order("last_cooked_at", desc=True)
+                    .limit(limit)
+                    .execute()
+                )
+                created = base.order("created_at", desc=True).limit(limit).execute()
+                rows += _as_rows(cooked.data or []) + _as_rows(created.data or [])
+        except Exception as e:
+            logger.warning(f"Could not fetch recent dish titles for user {user_id}: {e}")
+            return []
+        return merge_recent_titles(rows, limit)
+
     async def search_saved_recipes(
         self, user_id: str, query: str, limit: int = 5
     ) -> list[dict[str, Any]]:
@@ -1392,7 +1459,10 @@ class SupabaseRepository:
                 # than the one it was computed from.
                 name=normalize_food_name(str(row.get("name") or "")).lower().strip(),
                 quantity=current_qty,
-                unit=str(row.get("unit") or ""),
+                # A size the name states ("tomatoes 28 oz" as "1 can") is part of
+                # the unit, exactly as lots.lot_base reads it, so the deduction is
+                # in the same base the matcher worked out.
+                unit=effective_unit(str(row.get("name") or ""), str(row.get("unit") or "")),
             )
             if derived_base is not None and derived_unit is not None:
                 # Persist the derived values alongside the deduction so the row
@@ -1457,7 +1527,17 @@ class SupabaseRepository:
         (written later by `set_turn_metadata`). Nothing else may rewrite a saved
         row's `metadata` -- pantry-proposal turns get no follow-up chips, so no
         later writer exists today. Keep it that way, or an outcome gets clobbered.
+
+        Issue #847: a user turn is saved BEFORE its reply streams, so a stream
+        that dies leaves it stored with no reply after it, and the client's
+        Retry resends the identical text. A user save whose text equals the
+        conversation's last stored message (itself a user turn, so no assistant
+        reply follows it) reuses that row instead of inserting a duplicate.
         """
+        if role == "user" and await self._is_unanswered_user_turn(
+            user_id, conversation_id, content
+        ):
+            return
         self.client.table("conversation_history").insert(
             {
                 "user_id": user_id,
@@ -1469,6 +1549,66 @@ class SupabaseRepository:
                 "metadata": metadata,
             }
         ).execute()
+
+    async def _is_unanswered_user_turn(
+        self, user_id: str, conversation_id: str, content: str
+    ) -> bool:
+        """True when the conversation's newest stored message is a user turn with
+        exactly `content` (#847). Best effort: a failed lookup answers False, so a
+        message is never dropped because the dedupe check itself broke."""
+        try:
+            result = (
+                self.client.table("conversation_history")
+                .select("role,content")
+                .eq("user_id", user_id)
+                .eq("conversation_id", conversation_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+        except Exception as lookup_err:
+            logger.warning(f"User-turn dedupe lookup failed, saving anyway: {lookup_err}")
+            return False
+        rows = _as_rows(result.data)
+        return bool(rows) and rows[0].get("role") == "user" and rows[0].get("content") == content
+
+    async def delete_unanswered_user_turn(
+        self, user_id: str, conversation_id: str, content: str
+    ) -> bool:
+        """Delete the conversation's newest stored message, but only when it is a
+        user turn (so no assistant reply follows it) whose text is exactly
+        `content`. Returns whether a row went.
+
+        Issue #871: a user turn is saved BEFORE its reply streams, so a failed
+        send leaves it stored with no reply. Dismissing the failed send on the
+        client calls this so the turn does not come back on reload. The text must
+        match (the same exact comparison as #847's dedupe): a send that never
+        reached the server leaves an older, unrelated unanswered turn as the
+        newest row, and that one is real history. A newest row that is an
+        assistant turn (the send did get answered) is left alone, as is every
+        other user's and every other conversation's row: both `user_id` and
+        `conversation_id` are filtered on the lookup and the delete.
+        """
+        result = (
+            self.client.table("conversation_history")
+            .select("id,role,content")
+            .eq("user_id", user_id)
+            .eq("conversation_id", conversation_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = _as_rows(result.data)
+        if not rows or rows[0].get("role") != "user" or rows[0].get("content") != content:
+            return False
+        deleted = (
+            self.client.table("conversation_history")
+            .delete()
+            .eq("id", rows[0]["id"])
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return len(_as_rows(deleted.data)) > 0
 
     async def get_history(
         self, user_id: str, conversation_id: str, limit: int = _HISTORY_DEFAULT_LIMIT
@@ -1643,6 +1783,45 @@ class SupabaseRepository:
         if result.data:
             return _as_row(result.data[0])
         return None
+
+    async def get_household_size(self, user_id: str) -> int | None:
+        """How many people the user cooks for, or None when they never said (#874).
+
+        Source of truth is the auth user's `user_metadata.household_size`, which
+        the first-run staples step and the Profile entry write (#853). It is read
+        with the service role (`auth.admin.get_user_by_id`) rather than from the
+        request's JWT claims: the access token carries the metadata as of its
+        last refresh, so a size set a minute ago would be missing from it. When
+        the metadata has no usable size, `user_profiles.household_size` is the
+        fallback; when both are set the metadata wins.
+
+        Both reads are scoped by `user_id`. Never raises: each source degrades
+        to "not set" on any error, so the caller falls through to the learned
+        servings rather than failing the turn.
+        """
+        try:
+            response = self.client.auth.admin.get_user_by_id(user_id)
+            user = getattr(response, "user", None)
+            metadata = getattr(user, "user_metadata", None)
+            if isinstance(metadata, dict):
+                size = coerce_household_size(metadata.get("household_size"))
+                if size is not None:
+                    return size
+        except Exception as e:
+            logger.warning(f"Could not read household size from auth for user {user_id}: {e}")
+
+        try:
+            result = (
+                self.client.table("user_profiles")
+                .select("household_size")
+                .eq("user_id", user_id)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Could not read household size from profile for user {user_id}: {e}")
+            return None
+        rows = _as_rows(result.data or [])
+        return coerce_household_size(rows[0].get("household_size")) if rows else None
 
     # =========================================================================
     # Meals (issue #650) -- read-only from ai-service. Full meal CRUD lives

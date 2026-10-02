@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   streamChatMessage,
   fetchChatHistory,
+  dismissUnansweredTurn,
   applyPantryProposal,
   rejectPantryProposal,
   applyCookAmendment,
@@ -538,6 +539,13 @@ export function useChat(options?: UseChatOptions) {
                 ? {
                     ...msg,
                     content: `Oops! Something went wrong (${err.message}). Please try again!`,
+                    // Remember exactly what was sent so Retry is identical (#847).
+                    sendFailure: {
+                      text: trimmed,
+                      context: context ?? null,
+                      forcedIntent: forcedIntent ?? null,
+                      forcedIntentSource: forcedIntentSource ?? null,
+                    },
                   }
                 : msg,
             ),
@@ -876,6 +884,58 @@ export function useChat(options?: UseChatOptions) {
     [sendMessage],
   )
 
+  // ── Failed send: Retry / Dismiss (#847) ──────────────────────────────────
+
+  /** Drop a failed reply and the user bubble that triggered it; returns what was sent. */
+  const takeFailedSend = useCallback((failedId: string) => {
+    const list = messagesRef.current
+    const at = list.findIndex((m) => m.id === failedId)
+    const failure = at >= 0 ? list[at].sendFailure : undefined
+    if (!failure) return null
+    const userId = list[at - 1]?.role === 'user' ? list[at - 1].id : null
+    setMessages((prev) => prev.filter((m) => m.id !== failedId && m.id !== userId))
+    return failure
+  }, [])
+
+  /**
+   * Resend a failed turn: the identical text, context and forced intent, once.
+   * The failed pair is replaced by the fresh send, so the thread keeps a single
+   * user bubble for it.
+   */
+  const retryFailedSend = useCallback(
+    (failedId: string) => {
+      if (isStreaming) return
+      const failure = takeFailedSend(failedId)
+      if (!failure) return
+      sendMessage(failure.text, failure.context, failure.forcedIntent, failure.forcedIntentSource)
+    },
+    [isStreaming, takeFailedSend, sendMessage],
+  )
+
+  /**
+   * Drop a failed turn without resending; returns its text so the page can put it back in the input.
+   *
+   * The AI service stored the user turn before the reply failed, so Dismiss also
+   * asks it to delete that unanswered turn (#871); otherwise it returns on reload.
+   * The dismissed text goes along so the service deletes only a matching turn.
+   * Fire and forget: if the call fails the bubble is still gone and the turn is
+   * simply restored on the next reload, as it was before.
+   */
+  const dismissFailedSend = useCallback(
+    (failedId: string): string | null => {
+      const failure = takeFailedSend(failedId)
+      if (!failure) return null
+      const convId = conversationIdRef.current
+      if (convId) {
+        dismissUnansweredTurn(convId, failure.text).catch((err: unknown) => {
+          console.warn('[useChat] Could not delete the dismissed turn:', err)
+        })
+      }
+      return failure.text
+    },
+    [takeFailedSend],
+  )
+
   // ── Confirm-band send ────────────────────────────────────────────────────
   // Called when the user taps a confirm-band button. Aborts any in-flight
   // stream (same as sendChipMessage), then sends the button label as the
@@ -910,6 +970,8 @@ export function useChat(options?: UseChatOptions) {
     sendMessage,
     sendChipMessage,
     sendConfirmChoice,
+    retryFailedSend,
+    dismissFailedSend,
     cancelStream,
     startNewChat,
     approveProposal,

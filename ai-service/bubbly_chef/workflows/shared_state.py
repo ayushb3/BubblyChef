@@ -55,6 +55,14 @@ class LLMParsedItem(BaseModel):
 class LLMParseResult(BaseModel):
     """Schema for LLM parse response."""
 
+    is_receipt: bool = Field(
+        default=True,
+        description=(
+            "True if the text is from a grocery/store receipt or a purchase list. "
+            "False if it is clearly something else: an app or website screenshot, "
+            "a menu, a recipe, a document, a label. When unsure, true."
+        ),
+    )
     items: list[LLMParsedItem] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 

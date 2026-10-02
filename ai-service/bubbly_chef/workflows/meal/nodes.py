@@ -47,6 +47,7 @@ from bubbly_chef.api.deps import get_ai_manager
 from bubbly_chef.domain.allergens import allergens_named
 from bubbly_chef.domain.diet_terms import join_fields, norm_label
 from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
+from bubbly_chef.domain.household import coerce_household_size
 from bubbly_chef.domain.kitchen_limits import map_kitchen_limits_to_tags
 from bubbly_chef.domain.staples import NEVER_TO_BUY, shoppable
 from bubbly_chef.domain.stock import filter_usable_pantry_items, filter_usable_pantry_rows
@@ -59,6 +60,7 @@ from bubbly_chef.models.meal import (
     MealDishOutlineLLM,
     MealFixedMainEcho,
     MealOption,
+    MealOptionLLM,
     MealOptionsLLMResult,
     MealOptionsProposal,
     MealPlanSessionState,
@@ -69,12 +71,15 @@ from bubbly_chef.models.recipe import Ingredient, RecipeCard, build_structured_s
 from bubbly_chef.prompts.meal import (
     MEAL_DISH_EXPANSION_SYSTEM_PROMPT,
     MEAL_DISH_PANTRY_BLOCK_NO_PANTRY,
+    MEAL_DISH_PROMISED_INGREDIENTS_RULE,
+    MEAL_DISH_SEASONING_RULE,
     MEAL_FOLLOW_UPS_NO_PANTRY_RULE,
     MEAL_OPTIONS_FIXED_MAIN_BLOCK,
     MEAL_OPTIONS_FIXED_MAIN_NO_REPEAT_RULE,
     MEAL_OPTIONS_FIXED_MAIN_FOLLOW_UPS_RULE,
     MEAL_OPTIONS_FOLLOW_UPS_RULES,
     MEAL_OPTIONS_PREVIOUS_BLOCK,
+    MEAL_OPTIONS_REFINEMENT_BLOCK,
     MEAL_OPTIONS_SYSTEM_PROMPT_NO_PANTRY,
     MEAL_READY_FOLLOW_UPS_RULES,
     meal_dish_pantry_block,
@@ -101,6 +106,18 @@ from bubbly_chef.workflows.meal.fixed_main import (
     load_fixed_main_card,
     resolve_fixed_main,
     stored_dietary_preferences,
+)
+from bubbly_chef.workflows.meal.refine import merge_refinement_constraints, names_overlap
+from bubbly_chef.workflows.meal.variety import (
+    avoid_titles_block,
+    drop_repeated_options,
+    exempt_proteins,
+    repeats_avoided_title,
+    replace_duplicate_options,
+    shared_protein_among,
+    shared_protein_note,
+    strip_unsupported_claims,
+    unsupported_claims,
 )
 from bubbly_chef.workflows.recipe.exclusions import apply_food_exclusions
 from bubbly_chef.workflows.recipe.nodes import (
@@ -387,13 +404,33 @@ async def _pantry_items_for_matching(user_id: str) -> list[PantryItem]:
 
 
 async def _default_servings(user_id: str) -> int:
-    """Explicit-ask servings takes priority (handled by the caller); this is
-    the fallback: the mode of the user's last three *cooked* meals, else 2.
+    """The servings to plan for when the ask names no number (issue #874).
 
-    Ties are broken by the earliest occurrence in `recent` (i.e. the most
-    recently cooked of the tied values), since `recent` is already newest-
-    first from the repository.
+    Explicit-ask servings takes priority (handled by the caller). Below it:
+      1. the user's household size (issue #853's first-run answer, or the
+         Profile entry) -- their own word beats a guess;
+      2. the mode of the user's last three *cooked* meals;
+      3. 2.
+
+    Same order as the Next.js starter-context route's `computeDefaultServings`.
+    The household read replaces the history read when a size is set, so this
+    makes no more calls than before for those users, and it only runs on a turn
+    that reaches this fallback.
+
+    Ties in the learned mode are broken by the earliest occurrence in `recent`
+    (i.e. the most recently cooked of the tied values), since `recent` is
+    already newest-first from the repository.
     """
+    try:
+        repo = await get_repository()
+        household = coerce_household_size(await repo.get_household_size(user_id))
+    except Exception as e:
+        logger.warning("Could not fetch household size: %s", e)
+        household = None
+    if household is not None:
+        logger.info("Default servings %d from household size", household)
+        return household
+
     try:
         repo = await get_repository()
         recent = await repo.get_recent_meal_servings(user_id, limit=3)
@@ -440,6 +477,25 @@ async def _recent_cuisine_hint(user_id: str) -> str:
         + ". Lean gently toward them when an option fits naturally -- never force it, "
         "and don't mention this preference to the user."
     )
+
+
+_AVOID_TITLE_COUNT = 10
+
+
+async def _recent_dish_titles(user_id: str) -> list[str]:
+    """The user's last few saved and cooked recipe/meal titles, the "dishes to avoid
+    repeating" for the option prompt (issue #852). Best-effort like the cuisine hint: any
+    failure, or a repo without the method, yields no titles rather than breaking the turn
+    (the #650 tests' bare `MagicMock` repo raises `TypeError` on the await)."""
+    try:
+        repo = await get_repository()
+        titles = await repo.get_recent_dish_titles(user_id, limit=_AVOID_TITLE_COUNT)
+    except Exception as e:
+        logger.debug("Could not fetch recent dish titles to avoid: %s", e)
+        return []
+    if not isinstance(titles, list):
+        return []
+    return [t for t in titles if isinstance(t, str) and t.strip()]
 
 
 def _format_meal_constraints(constraints: dict[str, Any], kitchen_limits: list[str]) -> str:
@@ -936,10 +992,20 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     user_id = state.get("user_id") or ""
     context = state.get("context") or {}
     is_followup = context.get("meal_followup") is True
+    # A typed change to the meal on screen (#846) inherits the retained meal exactly as
+    # a pill tap does; `_finish_refinement` below then applies this turn's own change.
+    is_refinement = state.get("meal_refinement") is True
     fresh_fixed = has_fixed_main(context)
     # A fresh fixed-main turn never inherits a retained meal, even with
     # meal_followup also set.
-    retained_state = _retained_meal_plan_state(state) if is_followup and not fresh_fixed else None
+    retained_state = (
+        _retained_meal_plan_state(state)
+        if (is_followup or is_refinement) and not fresh_fixed
+        else None
+    )
+    # Ingredients this turn says are unavailable or unwanted; kept out of the pantry
+    # context and the coverage count for this turn. Never written to the pantry.
+    turn_unavailable: list[str] = []
 
     fixed_resolved: ResolvedFixedMain | None = None
     if fresh_fixed:
@@ -984,6 +1050,11 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         constraints = _finish_meal_followup_constraints(
             retained_constraints, merged_constraints, input_text
         )
+        if is_refinement:
+            refined, turn_unavailable = merge_refinement_constraints(
+                retained_constraints, merged_constraints, input_text
+            )
+            constraints = {**constraints, **refined}
         if fixed_resolved is not None:
             constraints = _drop_diets_the_main_contradicts(
                 constraints,
@@ -1033,6 +1104,10 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     # The fixed main has already decided the cuisine, so the recent-cuisine
     # weighting is skipped (the one exception to PR A's cuisine-hint behaviour).
     cuisine_hint = await _recent_cuisine_hint(user_id) if user_id and fixed_resolved is None else ""
+    # Dishes to avoid repeating (#852). A fixed main fixes the dish, so nothing to vary.
+    avoid_titles = (
+        await _recent_dish_titles(user_id) if user_id and fixed_resolved is None else []
+    )
     constraints_str = _format_meal_constraints(
         constraints, kitchen_limit_phrases
     ) + allergy_never_block(allergies)
@@ -1062,6 +1137,8 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
             if earlier:
                 options_text += ". Earlier: " + "; ".join(earlier)
             previous_block = MEAL_OPTIONS_PREVIOUS_BLOCK.format(options=options_text)
+        if is_refinement:
+            previous_block += MEAL_OPTIONS_REFINEMENT_BLOCK
 
     outline: MealDishOutline | None = None
     fixed_block = ""
@@ -1098,6 +1175,7 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         + pantry_context
         + constraints_str
         + cuisine_hint
+        + avoid_titles_block(avoid_titles)
         + previous_block
         + fixed_block
         + follow_ups_rules
@@ -1147,10 +1225,61 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
     # Pantry opt-out (#287): match nothing, so the cards claim no pantry use,
     # flag no rescues, and no option is dropped for its to-buy count.
     pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
+    if turn_unavailable:
+        # "I don't have butter": it is not stock for this turn's coverage either.
+        pantry_items = [
+            i for i in pantry_items if not any(names_overlap(i.name, n) for n in turn_unavailable)
+        ]
+
+    pantry_names = [i.name for i in pantry_items]
+    # An option whose main repeats a recent dish is dropped (#852), never emptying the set.
+    kept_raw = {
+        id(o) for o in drop_repeated_options(result.options[:3], avoid_titles, input_text)
+    }
+    candidates: list[tuple[int, MealOptionLLM]] = []
+    for idx, raw_option in enumerate(result.options[:3], start=1):
+        if id(raw_option) in kept_raw:
+            candidates.append((idx, raw_option))
+        else:
+            logger.info(
+                "meal_options_stage: dropping option %r -- repeats a recent dish", raw_option.title
+            )
+
+    # Two options with the same main protein and cuisine are one option twice (#877): keep
+    # the first, ask ONCE for replacements. A fixed main fixes the dish, so nothing to vary.
+    # A protein the user asked for is exempt, read from the structured constraints: the raw
+    # message can name a protein to refuse it ("no chicken tonight").
+    wanted_proteins = [
+        *(constraints.get("must_use_ingredients") or []),
+        *(constraints.get("preferred_ingredients") or []),
+    ]
+    refused_proteins = list(constraints.get("excluded_ingredients") or [])
+    check_variety = outline is None and len(candidates) > 1
+    if check_variety:
+
+        async def _propose_replacements(extra: str) -> list[MealOptionLLM]:
+            answer = await _propose(extra)
+            return list(answer.options) if isinstance(answer, MealOptionsLLMResult) else []
+
+        def _usable_replacement(candidate: MealOptionLLM) -> bool:
+            return (
+                not option_allergens(candidate, allergies)
+                and not repeats_avoided_title(candidate, avoid_titles, input_text)
+                and _normalize_option_dishes(candidate.dishes) is not None
+            )
+
+        varied = await replace_duplicate_options(
+            [o for _, o in candidates],
+            wanted_ingredients=wanted_proteins,
+            excluded_ingredients=refused_proteins,
+            propose=_propose_replacements,
+            accept=_usable_replacement,
+        )
+        candidates = [(idx, o) for (idx, _), o in zip(candidates, varied.options, strict=True)]
 
     options: list[MealOption] = []
     seen_fixed_dishes: set[tuple[str, ...]] = set()
-    for idx, raw_option in enumerate(result.options[:3], start=1):
+    for idx, raw_option in candidates:
         option_title: str = raw_option.title
         option_blurb: str | None = raw_option.blurb
         dishes: list[MealDishOutline] | None
@@ -1176,6 +1305,15 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
                 logger.info("meal_options_stage: dropping option %r -- duplicate", raw_option.title)
                 continue
             seen_fixed_dishes.add(dish_key)
+        # A blurb may only name what the option's dishes contain (#852): the claim is
+        # dropped in code, not by a second model call. A title can't be edited the same
+        # way, so one that overreaches is logged.
+        supported = [n for d in dishes for n in (d.name, *d.key_ingredients)]
+        option_blurb = strip_unsupported_claims(option_blurb, supported, pantry_names)
+        if overreach := unsupported_claims(option_title, supported, pantry_names):
+            logger.info(
+                "meal_options_stage: title %r names %s no dish has", option_title, overreach
+            )
         coverage: MealCoverage | None = None
         rescues: list[str] = []
         if pantry_grounded:
@@ -1211,6 +1349,16 @@ async def meal_options_stage(state: WorkflowState) -> WorkflowState:
         2: "Here are two meal ideas!",
         3: "Here are three meal ideas!",
     }.get(len(options), "Here are some meal ideas!")
+    if check_variety:
+        # Judged on what actually ships: options are still dropped after the replacement
+        # step (no valid side, to-buy cap), and a repeat whose twin is gone is no repeat.
+        raw_by_id = {f"opt_{idx}": o for idx, o in candidates}
+        shipped_raw = [raw_by_id[o.option_id] for o in options if o.option_id in raw_by_id]
+        shared = shared_protein_among(
+            shipped_raw, exempt_proteins(wanted_proteins, refused_proteins)
+        )
+        if shared is not None:
+            assistant_message += shared_protein_note(shared)
     if fixed_resolved is not None and outline is not None:
         fixed_echo = MealFixedMainEcho(
             recipe_id=fixed_resolved.linked_recipe_id, title=outline.name
@@ -1352,6 +1500,13 @@ async def _expand_dish_result(
         prompt += MEAL_READY_FOLLOW_UPS_RULES
         if not pantry_grounded:
             prompt += MEAL_FOLLOW_UPS_NO_PANTRY_RULE
+
+    # What the option card promised, and a seasoning bar the recipe has to meet (#852).
+    if dish.key_ingredients:
+        prompt += MEAL_DISH_PROMISED_INGREDIENTS_RULE.format(
+            ingredients=", ".join(dish.key_ingredients)
+        )
+    prompt += MEAL_DISH_SEASONING_RULE
 
     allergy_list = list(allergies or [])
     prompt += allergy_never_block(allergy_list)
@@ -1544,10 +1699,16 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     # answer against (#651 §5b) -- replaces the old "Here's your {title}!".
     main_title = dish_titles[0] if dish_titles else option.title
     side_titles = dish_titles[1:]
+    # The title says it once when the option and its main share a name (#846).
+    named = (
+        option.title
+        if _dish_name_key(main_title) == _dish_name_key(option.title)
+        else f"{option.title}: {main_title}"
+    )
     assistant_message = (
-        f"Here's your {option.title}: {main_title} with {' and '.join(side_titles)}!"
+        f"Here's your {named} with {' and '.join(side_titles)}!"
         if side_titles
-        else f"Here's your {option.title}: {main_title}!"
+        else f"Here's your {named}!"
     )
 
     return {

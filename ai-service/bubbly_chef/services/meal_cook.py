@@ -92,7 +92,14 @@ def resolve_supplied_ingredients(
             name = element.name.strip()
             if not name:
                 continue
-            resolved.append({"name": name, "quantity": element.quantity, "unit": element.unit})
+            supplied: dict[str, Any] = {
+                "name": name,
+                "quantity": element.quantity,
+                "unit": element.unit,
+            }
+            if element.quantity_max is not None:
+                supplied["quantity_max"] = element.quantity_max
+            resolved.append(supplied)
         else:
             stripped = element.strip()
             if not stripped:
@@ -103,6 +110,8 @@ def resolve_supplied_ingredients(
             qty = parsed.get("quantity")
             if string_scale != 1 and qty is not None:
                 parsed = {**parsed, "quantity": round(qty * string_scale, 2)}
+                if parsed.get("quantity_max") is not None:
+                    parsed["quantity_max"] = round(parsed["quantity_max"] * string_scale, 2)
             resolved.append(parsed)
     return resolved
 
@@ -147,6 +156,8 @@ def _resolve_dish_ingredients(
                 parsed_qty = parsed.get("quantity")
                 if parsed_qty is not None:
                     parsed = {**parsed, "quantity": round(parsed_qty * factor, 2)}
+                    if parsed.get("quantity_max") is not None:
+                        parsed["quantity_max"] = round(parsed["quantity_max"] * factor, 2)
                 resolved.append(parsed)
             else:
                 # No scaling needed -- let match_ingredients parse the raw
@@ -255,6 +266,7 @@ def _to_source(dish: MealCookDishMeta, match: IngredientMatch) -> MealCookSource
         ingredient_unit=match.ingredient_unit,
         required_base_qty=_required_base_qty(match),
         status=match.status,
+        approximate=match.approximate,
         match_type=match.match_type,
         substitution_note=match.substitution_note,
     )
@@ -327,6 +339,8 @@ def _merge_measured(group: _Group) -> MealIngredientMatch:
         base_unit=base_unit,
         status=status,
         shortfall=shortfall,
+        # One estimated dish makes the merged amount an estimate.
+        approximate=any(m.approximate for _, m in q),
         match_type=match_type,
         substitution_note=substitution_note,
         sources=sources_output,

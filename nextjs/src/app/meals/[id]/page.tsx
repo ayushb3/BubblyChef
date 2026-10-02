@@ -24,7 +24,8 @@ import {
 } from '@/lib/api/meals'
 import { ensureSteps } from '@/lib/api/recipes'
 import { fetchMealToBuyDetail } from '@/lib/api/grocery'
-import { toBuyByDish } from '@/lib/meal-to-buy'
+import { toBuyByDish, toBuyEntriesByDish } from '@/lib/meal-to-buy'
+import type { ManualLineInput } from '@/lib/grocery'
 import { useIngredientMatches } from '@/hooks/useIngredientMatches'
 import { ingredientParts } from '@/lib/recipe-helpers'
 import { scaledIngredients } from '@/lib/recipe-helpers'
@@ -301,6 +302,21 @@ export default function MealDetailPage() {
     () =>
       mealToBuy
         ? toBuyByDish(
+            mealToBuy,
+            dishesSorted.map((d) => ({
+              position: d.position,
+              names: d.recipe.ingredients.map((ing) => ingredientParts(ing).name),
+            })),
+          )
+        : null,
+    [mealToBuy, dishesSorted],
+  )
+  // What each card's "Add to grocery list" key adds: the same amounts, units and
+  // categories the meal's own to-buy line adds (issue #868).
+  const toBuyEntriesByPosition = useMemo(
+    () =>
+      mealToBuy
+        ? toBuyEntriesByDish(
             mealToBuy,
             dishesSorted.map((d) => ({
               position: d.position,
@@ -908,6 +924,7 @@ export default function MealDetailPage() {
               key={dish.recipe.id}
               dish={dish}
               toBuy={toBuyByPosition?.get(dish.position)}
+              toBuyEntries={toBuyEntriesByPosition?.get(dish.position)}
               mealServings={meal.servings}
               sideCount={sideCount}
               row={row}
@@ -1017,6 +1034,7 @@ function dishMinutes(recipe: MealDishFull['recipe']): number | null {
 function DishSection({
   dish,
   toBuy,
+  toBuyEntries,
   mealServings,
   sideCount,
   row,
@@ -1035,6 +1053,8 @@ function DishSection({
   dish: MealDishFull
   /** This dish's missing foods; undefined while unknown. */
   toBuy?: string[]
+  /** What this dish's add-to-list key adds, parallel to `toBuy` (issue #868). */
+  toBuyEntries?: Array<string | ManualLineInput>
   mealServings: number
   sideCount: number
   row: RowUiState | null
@@ -1077,6 +1097,7 @@ function DishSection({
           steps={dish.recipe.steps ?? fallbackSteps(dish.recipe.instructions)}
           stepsEstimated={stepsEstimated}
           toBuy={toBuy}
+          toBuyEntries={toBuyEntries}
           actions={
             isSide ? (
               <>

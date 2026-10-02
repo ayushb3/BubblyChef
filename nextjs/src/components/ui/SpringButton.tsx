@@ -109,7 +109,7 @@ const OWN_LAYOUT = {
 } as const
 
 /** Three pixel dots stepping through 3 frames (160 ms each); still when reduced. */
-function PixelDots() {
+export function PixelDots() {
   const frame = useSteppedFrame(3, 160)
   const raised = (frame + 1) % 3 // reduced motion holds the board's middle-up pose
   return (

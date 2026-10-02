@@ -31,6 +31,8 @@ export interface SavedCardProps {
   cuisine?: string | null
   difficulty?: string | null
   tags?: string[]
+  /** "Cooked 3x, last 2 days ago" (issue #855); hidden when absent. */
+  cookedLabel?: string | null
   favorite?: boolean
   /** Makes the text area a button that opens the recipe. */
   onOpen?: () => void
@@ -56,6 +58,7 @@ export default function SavedVariant({
   cuisine,
   difficulty,
   tags = [],
+  cookedLabel,
   favorite = false,
   onOpen,
   onToggleFavorite,
@@ -125,6 +128,7 @@ export default function SavedVariant({
         {meta.length > 0 && (
           <span className="text-xs leading-4 font-bold tabular-nums">{meta.join(' · ')}</span>
         )}
+        {cookedLabel && <span className="text-xs leading-4 font-bold">{cookedLabel}</span>}
         {shownTags.length > 0 && (
           <span className="flex flex-wrap gap-1">
             {shownTags.map((tag) => (

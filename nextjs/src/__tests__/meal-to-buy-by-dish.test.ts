@@ -29,7 +29,17 @@ describe('fetchMealToBuyDetail', () => {
     )
     expect(await fetchMealToBuyDetail('m')).toEqual({
       names: ['fresh basil'],
-      items: [{ name: 'fresh basil', dishPositions: [0, 1], dishNames: ['fresh basil', 'basil'] }],
+      items: [
+        {
+          name: 'fresh basil',
+          dishPositions: [0, 1],
+          dishNames: ['fresh basil', 'basil'],
+          // No amount fields on the wire (an older service): no amount (issue #850).
+          quantity: null,
+          unit: null,
+          category: null,
+        },
+      ],
     })
   })
 
