@@ -48,6 +48,7 @@ from bubbly_chef.services.allergen_guard import (
     allergen_refusal_message,
     generate_allergen_safe,
 )
+from bubbly_chef.services.concurrent_reads import concurrent_reads
 from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
 from bubbly_chef.services.food_exclusions import allergy_never_block, get_stored_food_exclusions
 from bubbly_chef.workflows.meal.nodes import (
@@ -188,8 +189,10 @@ async def _pantry_grounding(
     pantry_grounded = is_pantry_grounded(constraints_echo.recipe_constraints)
     if not pantry_grounded:
         return False, [], DEFAULT_EXPIRY_PRIORITY
-    expiry_priority = await get_stored_expiry_priority(user_id)
-    pantry_items = await _pantry_items_for_matching(user_id)
+    # Independent reads, so together (issue #888).
+    expiry_priority, pantry_items = await concurrent_reads(
+        get_stored_expiry_priority(user_id), _pantry_items_for_matching(user_id)
+    )
     scored_items = _score_items_for_dish_prompt(
         pantry_items, constraints_echo.recipe_constraints, allergies, expiry_priority
     )
@@ -234,7 +237,11 @@ async def generate_side_alternatives(
     backstop: it excludes every current dish, including the one being
     replaced, regardless of whether the model honors `avoid_line`.
     """
-    loaded = await _load_meal(user_id, meal_id, repo)
+    # The meal and the profile's allergies don't depend on each other (issue #888).
+    # Read from the profile on every call (#500), never from the meal's stored echo.
+    loaded, exclusions = await concurrent_reads(
+        _load_meal(user_id, meal_id, repo), get_stored_food_exclusions(user_id)
+    )
     if loaded is None:
         raise MealNotFoundError(meal_id)
 
@@ -247,8 +254,7 @@ async def generate_side_alternatives(
     current_titles = [_dish_title(d) for d in loaded.dishes if _dish_title(d)]
 
     constraints_echo = loaded.constraints_echo
-    # Read from the profile on every call (#500), never from the meal's stored echo.
-    allergies = list((await get_stored_food_exclusions(user_id)).allergies)
+    allergies = list(exclusions.allergies)
     pantry_grounded, scored_items, expiry_priority = await _pantry_grounding(
         user_id, constraints_echo, allergies
     )
@@ -374,7 +380,9 @@ async def expand_meal_dish(
     tags steps with the meal's `exclusive_tags`, at the meal's own servings.
     Writes nothing -- the caller persists through `PUT /api/meals/[id]`.
     """
-    loaded = await _load_meal(user_id, meal_id, repo)
+    loaded, exclusions = await concurrent_reads(
+        _load_meal(user_id, meal_id, repo), get_stored_food_exclusions(user_id)
+    )
     if loaded is None:
         raise MealNotFoundError(meal_id)
 
@@ -389,7 +397,7 @@ async def expand_meal_dish(
         dishes=[outline, *other_outlines],
     )
 
-    allergies = list((await get_stored_food_exclusions(user_id)).allergies)
+    allergies = list(exclusions.allergies)
     pantry_grounded, scored_items, expiry_priority = await _pantry_grounding(
         user_id, loaded.constraints_echo, allergies
     )
