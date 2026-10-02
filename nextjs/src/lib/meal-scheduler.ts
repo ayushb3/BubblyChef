@@ -225,14 +225,19 @@ interface SanitizedDish {
  * one before it (the sequential fallback). Returns one valid-dependency-
  * indices array per step, in step order, plus whether the fallback fired.
  *
+ * Otherwise (issue #891) a preheat is treated as the hands-off wait it is:
+ * see `relaxPreheatDependencies`.
+ *
  * Exported as `sanitizedDependencyKeys` below for `meal-cook-stream.ts`'s
  * `waiting_on` (issue #653 review round 1, nit) — the raw, unsanitized
  * `depends_on` would show no wait reason (or the wrong one) once a dish has
  * fallen back to running its steps strictly in order.
  */
-function sanitizeDependsOn(steps: Pick<Step, 'depends_on'>[]): {
+function sanitizeDependsOn(steps: Pick<Step, 'depends_on' | 'text' | 'label'>[]): {
   depsByIndex: number[][]
   sawInvalidDep: boolean
+  /** Steps that are a hands-off wait (a preheat) whatever the model marked them. */
+  waitSteps: Set<number>
 } {
   let sawInvalidDep = false
   const depsByIndex: number[][] = steps.map((s, i) => {
@@ -247,8 +252,83 @@ function sanitizeDependsOn(steps: Pick<Step, 'depends_on'>[]): {
       deps.add(i - 1)
       depsByIndex[i] = Array.from(deps).sort((a, b) => a - b)
     }
+    return { depsByIndex, sawInvalidDep, waitSteps: new Set() }
   }
-  return { depsByIndex, sawInvalidDep }
+  const waitSteps = relaxPreheatDependencies(steps, depsByIndex)
+  return { depsByIndex, sawInvalidDep, waitSteps }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #891 — a preheat blocks only the steps that need the hot appliance
+// ---------------------------------------------------------------------------
+
+/**
+ * A preheat step names an appliance, and the later steps that need that
+ * appliance are recognised by cooking verbs. The model tends to chain every
+ * step to the one before it ("season" after "preheat"), which turns a
+ * hands-off wait into idle minutes; this recovers the real shape.
+ * Deliberately limited to heated appliances, where a missed user is cheap
+ * (the step simply stays behind the preheat, as before) — "boil water" and
+ * "marinate" have no reliable text signal for who uses them, so those rest on
+ * the prompt's guidance alone.
+ */
+const PREHEAT_RE = /\bpre-?heat\w*\b|\bheat (?:up )?the (?:oven|grill|broiler)\b/i
+const APPLIANCES: { named: RegExp; users: RegExp }[] = [
+  { named: /\boven\b/i, users: /\b(?:oven|bake[sd]?|roast\w*|broil\w*)\b/i },
+  { named: /\bbroiler\b/i, users: /\b(?:oven|broil\w*)\b/i },
+  { named: /\b(?:grill|griddle)\b/i, users: /\b(?:grill\w*|griddle|sear\w*)\b/i },
+  { named: /\bair[- ]?fryer\b/i, users: /\b(?:air[- ]?fr\w*|fryer|basket)\b/i },
+]
+/** "baking sheet" / "roasting tray" are prep equipment, not the oven being used. */
+const EQUIPMENT_RE = /\b(?:baking|roasting|grill)\s+(?:sheet|tray|pan|dish|rack|paper|soda|powder|mat)s?\b/gi
+
+function stepText(step: Pick<Step, 'text' | 'label'>): string {
+  return `${step.label ?? ''}. ${step.text ?? ''}`
+}
+
+function preheatUsers(step: Pick<Step, 'text' | 'label'>): RegExp[] | null {
+  const text = stepText(step)
+  if (!PREHEAT_RE.test(text)) return null
+  const users = APPLIANCES.filter((a) => a.named.test(text)).map((a) => a.users)
+  return users.length > 0 ? users : null
+}
+
+/**
+ * Rewrites `depsByIndex` in place. For each preheat step P:
+ *  - P itself needs nothing (turning the dial doesn't wait on prep), so its
+ *    own dependencies are cleared and it can run alongside hands-on work;
+ *  - a later step that listed P and does not use the appliance drops P and
+ *    inherits P's former dependencies instead, so it still waits on whatever
+ *    it really followed (a chop before the preheat) but not on the heat;
+ *  - a later step that does use the appliance always depends on P — directly,
+ *    since the step that used to carry P to it may no longer reach P.
+ * Every dependency still points to a strictly-earlier step, so no cycle can
+ * form. Returns the preheat step indices.
+ */
+function relaxPreheatDependencies(
+  steps: Pick<Step, 'text' | 'label'>[],
+  depsByIndex: number[][],
+): Set<number> {
+  const waits = new Set<number>()
+  steps.forEach((step, p) => {
+    const users = preheatUsers(step)
+    if (!users) return
+    waits.add(p)
+    const formerDeps = depsByIndex[p]
+    depsByIndex[p] = []
+    for (let i = p + 1; i < steps.length; i++) {
+      const text = stepText(steps[i]).replace(EQUIPMENT_RE, '')
+      const needsHeat = users.some((re) => re.test(text))
+      const deps = new Set(depsByIndex[i])
+      if (needsHeat) {
+        deps.add(p)
+      } else if (deps.delete(p)) {
+        formerDeps.forEach((d) => deps.add(d))
+      }
+      depsByIndex[i] = Array.from(deps).sort((a, b) => a - b)
+    }
+  })
+  return waits
 }
 
 /** See `sanitizeDependsOn`'s doc comment. */
@@ -264,7 +344,7 @@ function sanitizeDish(
   warnings: Set<SchedulerWarning>,
   kitchenLimits: ReadonlySet<string>,
 ): { dish: SanitizedDish; degraded: boolean } {
-  const { depsByIndex, sawInvalidDep } = sanitizeDependsOn(dish.steps)
+  const { depsByIndex, sawInvalidDep, waitSteps } = sanitizeDependsOn(dish.steps)
 
   const steps: SanitizedStep[] = dish.steps.map((s, i) => {
     let duration = s.duration_minutes
@@ -282,7 +362,8 @@ function sanitizeDish(
       label: s.label,
       ongoing_label: s.ongoing_label ?? null,
       duration_minutes: duration,
-      hands_on: s.hands_on,
+      // A preheat is a hands-off wait even when the model marked it hands-on.
+      hands_on: waitSteps.has(i) ? false : s.hands_on,
       depends_on: depsByIndex[i],
       // Only the tags the user actually named as kitchen limits constrain the plan.
       exclusive: (s.exclusive ?? []).filter((t) => kitchenLimits.has(t)),
