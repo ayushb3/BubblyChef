@@ -33,7 +33,7 @@ import { TIMER_COMPLETED_EVENT, type CookingTimer } from '@/lib/useCookingTimers
 // MealCookError` in the page needs the real constructor.
 import { MealCookError } from '@/lib/api/meals'
 
-// Issue #654 PR B — the Ask Bubbles overlay (rendered for real, mounted by
+// Issue #654 PR B — the Ask Bubbly overlay (rendered for real, mounted by
 // the page) calls `streamChatMessage`; mocked exactly as
 // `ask-bubbles-overlay.test.tsx` mocks it for the component in isolation.
 jest.mock('@/lib/api/chat', () => ({ streamChatMessage: jest.fn() }))
@@ -1010,7 +1010,7 @@ describe('MealCookPage — waiting card (PR #661 review)', () => {
   })
 })
 
-describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
+describe('MealCookPage — Ask Bubbly (issue #654 PR B, §3/§6)', () => {
   const PASTA_WITH_INGREDIENTS: Recipe = {
     ...MAIN_RECIPE,
     ingredients: [{ name: 'Cream', quantity: 150, unit: 'ml' }],
@@ -1069,7 +1069,7 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
     })
 
     expect(screen.getByText('Asking about Pasta dinner')).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 1' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbly about step 1' })).toBeInTheDocument()
   })
 
   it('the first turn sends context.cooking_recipe at recipe scale, and later turns reuse the same conversation_id', async () => {
@@ -1304,7 +1304,7 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
     act(() => {
       screen.getByTestId('meal-now-card-ask-bubbles').click()
     })
-    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 1' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbly about step 1' })).toBeInTheDocument()
 
     act(() => {
       screen.getByRole('button', { name: 'Done' }).click()
@@ -1313,7 +1313,7 @@ describe('MealCookPage — Ask Bubbles (issue #654 PR B, §3/§6)', () => {
 
     // The overlay is still pinned to the original step (1), not whatever the
     // Now card moved on to.
-    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 1' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbly about step 1' })).toBeInTheDocument()
     expect(screen.getByText('Asking about Pasta dinner')).toBeInTheDocument()
   })
 

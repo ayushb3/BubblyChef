@@ -135,7 +135,7 @@ export default function VariantE() {
                 className="mt-4 w-full rounded-full py-2 text-sm font-bold flex items-center justify-center gap-2"
                 style={{ background: 'var(--color-accent)', color: 'var(--color-text)' }}
               >
-                💬 Ask Bubbles about this step
+                💬 Ask Bubbly about this step
               </button>
             </div>
           )}

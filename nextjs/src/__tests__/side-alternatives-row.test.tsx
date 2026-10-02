@@ -137,7 +137,7 @@ describe('SideAlternativesRow waiting states (issue #887)', () => {
     )
     expect(screen.getByRole('status')).toHaveTextContent('Bubbly is thinking of sides…')
     expect(screen.getAllByRole('status')).toHaveLength(1)
-    expect(screen.getByAltText('Bubbles thinking')).toBeInTheDocument()
+    expect(screen.getByAltText('Bubbly thinking')).toBeInTheDocument()
   })
 
   it('skeletons take the same card slots as the alternatives (three, same width) and are hidden from assistive tech', () => {
@@ -171,7 +171,7 @@ describe('SideAlternativesRow waiting states (issue #887)', () => {
     )
     const picked = screen.getByRole('listitem', { name: /Building Garlic green beans/ })
     expect(within(picked).getByTestId('side-working')).toBeInTheDocument()
-    expect(within(picked).getByAltText('Bubbles thinking')).toBeInTheDocument()
+    expect(within(picked).getByAltText('Bubbly thinking')).toBeInTheDocument()
     expect(picked.className).not.toMatch(/\bopacity-50\b/)
 
     for (const name of ['Pick Charred broccolini', 'Pick Roasted carrots']) {

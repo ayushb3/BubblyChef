@@ -201,6 +201,6 @@ describe('failed send (#847)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Dismiss/ }))
     expect(dismissFailedSend).toHaveBeenCalledWith('a-1')
-    expect(screen.getByRole('textbox', { name: 'Message Bubbles' })).toHaveValue('plan dinner')
+    expect(screen.getByRole('textbox', { name: 'Message Bubbly' })).toHaveValue('plan dinner')
   })
 })

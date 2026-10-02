@@ -150,7 +150,7 @@ test.describe('guest walkthrough (issue #518)', () => {
     }
 
     await expect(page).not.toHaveURL(/\/login/);
-    await expect(page.getByAltText(/Bubbles/).first()).toBeVisible();
+    await expect(page.getByAltText(/Bubbly/).first()).toBeVisible();
     expect(guestUid, 'Expected an anonymous Supabase session cookie after landing on /').not.toBeNull();
 
     // A fresh guest gets the first-run coach-mark tour over the kitchen, and its
@@ -158,7 +158,7 @@ test.describe('guest walkthrough (issue #518)', () => {
     // onboarding_completed on this guest only, deleted in afterAll) so the
     // steps below drive the real UI the way a returning visitor would.
     await page.getByRole('button', { name: 'Skip' }).click({ timeout: 10_000 });
-    await expect(page.getByText("Hi! I'm Bubbles, your kitchen assistant.")).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Hi! I'm Bubbly, your kitchen assistant.")).not.toBeVisible({ timeout: 5_000 });
 
     // ── 2. Pantry add (Manual tab), then reload — same UID keeps the item ──
     // Mirrors e2e/smoke/smoke.spec.ts's "add a pantry item through the
@@ -237,7 +237,7 @@ test.describe('guest walkthrough (issue #518)', () => {
 
     await page.goto('/chat');
     await expect(page).not.toHaveURL(/\/login/);
-    const chatInput = page.getByLabel('Message Bubbles');
+    const chatInput = page.getByLabel('Message Bubbly');
     await expect(chatInput).toBeVisible({ timeout: 10_000 });
     await chatInput.fill('What can I make with pasta?');
     await page.getByRole('button', { name: 'Send', exact: true }).click();

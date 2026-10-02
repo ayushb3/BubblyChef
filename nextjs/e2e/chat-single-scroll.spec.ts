@@ -53,8 +53,8 @@ test.describe('chat scrolls in one place only (#731)', () => {
 
     expect(await pageScrolls(page)).toBe(false);
 
-    const header = page.getByRole('heading', { name: 'Bubbles' });
-    const composer = page.getByLabel('Message Bubbles');
+    const header = page.getByRole('heading', { name: 'BubblyChef' });
+    const composer = page.getByLabel('Message Bubbly');
     const headerTop = (await header.boundingBox()).y;
     const composerTop = (await composer.boundingBox()).y;
 
@@ -77,7 +77,7 @@ test.describe('chat scrolls in one place only (#731)', () => {
   test('the empty state fits the viewport with no page scroll', async ({ page }) => {
     await stubChat(page, { seeded: false });
     await page.goto('/chat');
-    await expect(page.getByLabel('Message Bubbles')).toBeVisible();
+    await expect(page.getByLabel('Message Bubbly')).toBeVisible();
 
     expect(await pageScrolls(page)).toBe(false);
   });

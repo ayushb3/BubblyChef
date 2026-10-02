@@ -141,7 +141,7 @@ test.describe('chat resume, retry and jump pill (#847)', () => {
           : route.fulfill({ status: 200, contentType: 'text/event-stream', body: okReply('Here is dinner!') }),
     });
     await page.goto('/chat');
-    await page.getByLabel('Message Bubbles').fill('plan dinner for two');
+    await page.getByLabel('Message Bubbly').fill('plan dinner for two');
     await page.getByRole('button', { name: 'Send' }).click();
 
     await expect(page.getByText(/Something went wrong/)).toBeVisible();
@@ -163,12 +163,12 @@ test.describe('chat resume, retry and jump pill (#847)', () => {
       stream: (route) => route.abort('failed'),
     });
     await page.goto('/chat');
-    await page.getByLabel('Message Bubbles').fill('plan dinner for two');
+    await page.getByLabel('Message Bubbly').fill('plan dinner for two');
     await page.getByRole('button', { name: 'Send' }).click();
     await expect(page.getByText(/Something went wrong/)).toBeVisible();
 
     await page.getByRole('button', { name: /Dismiss/ }).click();
-    await expect(page.getByLabel('Message Bubbles')).toHaveValue('plan dinner for two');
+    await expect(page.getByLabel('Message Bubbly')).toHaveValue('plan dinner for two');
     await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
   });
 
@@ -190,7 +190,7 @@ test.describe('chat resume, retry and jump pill (#847)', () => {
 
     const pillBox = await pill.boundingBox();
     const scrollBox = await page.locator('.overflow-y-auto').first().boundingBox();
-    const inputBox = await page.getByLabel('Message Bubbles').boundingBox();
+    const inputBox = await page.getByLabel('Message Bubbly').boundingBox();
     // Not over the scrolling thread (and so not over any card in it) ...
     expect(pillBox.y).toBeGreaterThanOrEqual(scrollBox.y + scrollBox.height - 1);
     // ... and above the input, with clearance.

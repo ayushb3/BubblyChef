@@ -53,7 +53,7 @@ describe('BubblesMascot (#525)', () => {
     'renders the %s state',
     (state) => {
       render(<BubblesMascot state={state} />)
-      expect(screen.getByAltText(`Bubbles ${state}`)).toBeInTheDocument()
+      expect(screen.getByAltText(`Bubbly ${state}`)).toBeInTheDocument()
     },
   )
 
@@ -76,7 +76,7 @@ describe('BubblesMascot (#525)', () => {
   it('still swaps to the worried image under reduced motion (only motion is skipped)', () => {
     mockReducedMotion = true
     render(<BubblesMascot state="worried" />)
-    expect(screen.getByAltText('Bubbles worried')).toBeInTheDocument()
+    expect(screen.getByAltText('Bubbly worried')).toBeInTheDocument()
   })
 
   it.each(['happy', 'surprised', 'thinking', 'worried', 'celebrate'] as const)(
@@ -84,7 +84,7 @@ describe('BubblesMascot (#525)', () => {
     (state) => {
       mockReducedMotion = true
       render(<BubblesMascot state={state} />)
-      const img = screen.getByAltText(`Bubbles ${state}`)
+      const img = screen.getByAltText(`Bubbly ${state}`)
       const motionWrapper = img.closest('[data-motion-animate]')
       expect(motionWrapper).not.toBeNull()
       // Empty object == no keyframes handed to framer-motion == nothing to
@@ -104,7 +104,7 @@ describe('BubblesMascot (#525)', () => {
     (state, src) => {
       it('is what the rendered <img> uses for src', () => {
         render(<BubblesMascot state={state} />)
-        const img = screen.getByAltText(`Bubbles ${state}`)
+        const img = screen.getByAltText(`Bubbly ${state}`)
         const rawSrc = img.getAttribute('src') ?? ''
         // next/image rewrites `src` through its optimizer
         // (`/_next/image?url=<encoded>&w=...&q=...`) rather than rendering

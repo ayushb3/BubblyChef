@@ -51,7 +51,7 @@ export default function DinnerInput() {
         type="submit"
         variant="primary"
         className="shrink-0 px-5"
-        aria-label={empty ? 'Open chat' : 'Ask Bubbles'}
+        aria-label={empty ? 'Open chat' : 'Ask Bubbly'}
       >
         {empty ? 'Chat' : 'Ask'}
       </SpringButton>

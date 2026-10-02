@@ -61,7 +61,7 @@ describe('ScanFailureNotice', () => {
     const notice = screen.getByRole('alert')
     expect(notice).toHaveAttribute('data-pixel-panel')
     expect(within(notice).getByText(scanErrorCopy(code))).toBeInTheDocument()
-    expect(within(notice).getByAltText(`Bubbles ${sprite}`)).toBeInTheDocument()
+    expect(within(notice).getByAltText(`Bubbly ${sprite}`)).toBeInTheDocument()
 
     const retry = within(notice).getByRole('button', { name: /choose a photo/i })
     expect(retry).toBeEnabled()
@@ -109,7 +109,7 @@ describe.each(ENTRY_POINTS)('$name', ({ mount }) => {
     const notice = await screen.findByRole('alert')
     expect(notice).toHaveAttribute('data-pixel-panel')
     expect(within(notice).getByText(scanErrorCopy(f.code))).toBeInTheDocument()
-    expect(within(notice).getByAltText(`Bubbles ${f.sprite}`)).toBeInTheDocument()
+    expect(within(notice).getByAltText(`Bubbly ${f.sprite}`)).toBeInTheDocument()
 
     // Every control is live: the keycap, and the dropzone it sits above.
     expect(within(notice).getByRole('button', { name: /choose a photo/i })).toBeEnabled()

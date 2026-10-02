@@ -126,13 +126,13 @@ describe('TimerDock over guided cook (issue #657)', () => {
     expect(stepBody().className).toContain('pb-[calc(6rem+env(safe-area-inset-bottom))]')
   })
 
-  it('drops back to z-40 while Ask Bubbles is open, and rises again on close', () => {
+  it('drops back to z-40 while Ask Bubbly is open, and rises again on close', () => {
     render(<Harness />)
     startTimer()
     fireEvent.click(screen.getByTestId('guided-cook-next')) // skip prep so a step exists
     expect(screen.getByTestId('timer-dock')).toHaveAttribute('data-raised', 'true')
 
-    fireEvent.click(screen.getByLabelText('Ask Bubbles about this step'))
+    fireEvent.click(screen.getByLabelText('Ask Bubbly about this step'))
     expect(screen.getByTestId('timer-dock')).toHaveAttribute('data-raised', 'false')
     expect(screen.getByTestId('timer-dock').className).toContain('z-40')
 

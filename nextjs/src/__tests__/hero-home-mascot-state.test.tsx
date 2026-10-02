@@ -91,7 +91,7 @@ describe('Bubbles card mood (#525, #593)', () => {
     ])
     renderHero()
 
-    const img = await screen.findByAltText('Bubbles worried')
+    const img = await screen.findByAltText('Bubbly worried')
     expect(img).toBeInTheDocument()
   })
 
@@ -101,7 +101,7 @@ describe('Bubbles card mood (#525, #593)', () => {
     ])
     renderHero()
 
-    const img = await screen.findByAltText('Bubbles happy')
+    const img = await screen.findByAltText('Bubbly happy')
     expect(img).toBeInTheDocument()
   })
 
@@ -120,7 +120,7 @@ describe('Bubbles card mood (#525, #593)', () => {
     )
     renderHero()
 
-    const img = await screen.findByAltText('Bubbles surprised')
+    const img = await screen.findByAltText('Bubbly surprised')
     expect(img).toBeInTheDocument()
   })
 
@@ -142,7 +142,7 @@ describe('Bubbles card mood (#525, #593)', () => {
     )
     renderHero()
 
-    const img = await screen.findByAltText('Bubbles worried')
+    const img = await screen.findByAltText('Bubbly worried')
     expect(img).toBeInTheDocument()
   })
 
@@ -150,7 +150,7 @@ describe('Bubbles card mood (#525, #593)', () => {
     mockFetch([])
     renderHero()
 
-    const img = await screen.findByAltText('Bubbles happy')
+    const img = await screen.findByAltText('Bubbly happy')
     expect(img).toBeInTheDocument()
   })
 
@@ -161,8 +161,8 @@ describe('Bubbles card mood (#525, #593)', () => {
     )
     renderHero({ initialExpiryPriority: 'off' })
 
-    expect(await screen.findByAltText('Bubbles happy')).toBeInTheDocument()
-    expect(screen.queryByAltText('Bubbles surprised')).not.toBeInTheDocument()
+    expect(await screen.findByAltText('Bubbly happy')).toBeInTheDocument()
+    expect(screen.queryByAltText('Bubbly surprised')).not.toBeInTheDocument()
   })
 
   it('is thinking at a mealtime with nothing urgent', async () => {
@@ -170,6 +170,6 @@ describe('Bubbles card mood (#525, #593)', () => {
     mockFetch([{ id: 'p1', name: 'eggs', is_expired: false, quantity: 3 }])
     renderHero()
 
-    expect(await screen.findByAltText('Bubbles thinking')).toBeInTheDocument()
+    expect(await screen.findByAltText('Bubbly thinking')).toBeInTheDocument()
   })
 })

@@ -37,9 +37,10 @@ beforeEach(() => {
 })
 
 describe('/scan signature restyle', () => {
-  it('has the shared page header: an h1 title with Cancel back to the kitchen', () => {
+  it('has the shared page header (#894): BubblyChef, with Cancel back to the kitchen, and its own heading below', () => {
     renderPage()
-    expect(screen.getByRole('heading', { level: 1, name: 'Scan a receipt' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'BubblyChef' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Scan a receipt' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/')
   })
 
