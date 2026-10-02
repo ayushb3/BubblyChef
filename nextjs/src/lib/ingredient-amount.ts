@@ -26,7 +26,7 @@ const SPICE_WORDS = new Set([
 // Words that make a food uncountable when they are its head (last) word.
 const HEAD_WORDS = new Set([
   'powder', 'flake', 'seasoning', 'spice', 'extract', 'zest', 'oil', 'vinegar', 'juice',
-  'sauce', 'broth', 'stock', 'wine', 'water', 'milk', 'cream', 'syrup', 'honey', 'molasses',
+  'sauce', 'broth', 'stock', 'wine', 'water', 'milk', 'cream', 'syrup', 'honey', 'molasses', 'hummus',
   'mustard', 'ketchup', 'mayonnaise', 'dressing', 'paste', 'marinade', 'flour', 'sugar',
   'starch', 'cornstarch',
 ])
@@ -38,8 +38,16 @@ const COUNTABLE_FORMS = new Set(['stick', 'sprig', 'leaf', 'leave', 'pod', 'clov
 // ("bell", "chili", "red", "jalapeno") it is a vegetable you count.
 const PEPPER_SEASONING_PREFIXES = new Set(['black', 'white', 'ground', 'cracked', 'freshly', 'lemon', 'and'])
 
-// Units that just mean "this many of the thing".
-const COUNT_LIKE_UNITS = new Set(['count', 'counts', 'ct', 'item', 'items', 'each'])
+// The count units a model writes for a spice. "item"/"items" is deliberately not here: it is
+// the pantry's default package unit, so "milk, 2 items" is a real amount (this module reads
+// recipe lines only).
+const COUNT_LIKE_UNITS = new Set(['count', 'counts', 'ct'])
+
+// Words whose base form ends in "s": never singularised ("molasses" is not "molasse").
+const BASE_FORM_S_WORDS = new Set([
+  'molasses', 'hummus', 'couscous', 'asparagus', 'watercress', 'lemongrass', 'citrus',
+  'swiss', 'brussels', 'harissa', 'hibiscus',
+])
 
 function words(name: string): string[] {
   const head = name.toLowerCase().replace(/\([^)]*\)/g, ' ').split(',')[0]
@@ -48,6 +56,7 @@ function words(name: string): string[] {
     .filter(Boolean)
     .map((w) => {
       if (w === 'leaves') return 'leaf'
+      if (BASE_FORM_S_WORDS.has(w)) return w
       return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w
     })
 }
@@ -61,11 +70,6 @@ export function isUncountableFood(name: string): boolean {
   if (w.some((x) => SPICE_WORDS.has(x))) return true
   if (head === 'pepper') return w.length === 1 || PEPPER_SEASONING_PREFIXES.has(w[w.length - 2])
   return HEAD_WORDS.has(head)
-}
-
-/** True for a unit that just means "this many of the thing" ("count", "item"). */
-export function isCountLikeUnit(unit: string | null | undefined): boolean {
-  return COUNT_LIKE_UNITS.has((unit ?? '').trim().toLowerCase())
 }
 
 export interface CleanedAmount {
@@ -94,7 +98,7 @@ export function cleanIngredientAmount(
 }
 
 // "0.25 count Cinnamon", "1/4 count ground cumin": a number, a count word, a food.
-const COUNTED_TEXT = /^\s*(?:\d+\s+\d+\/\d+|\d+\/\d+|\d*\.\d+|\d+)\s+(?:count|counts|ct|items?|each)\s+(.+)$/i
+const COUNTED_TEXT = /^\s*(?:\d+\s+\d+\/\d+|\d+\/\d+|\d*\.\d+|\d+)\s+(?:count|counts|ct)\s+(.+)$/i
 
 /** A recipe line kept as text ("0.25 count Cinnamon"), read the same way. */
 export function cleanIngredientString(text: string): string {

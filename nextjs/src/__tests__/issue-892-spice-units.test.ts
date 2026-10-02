@@ -16,7 +16,8 @@ import {
   cleanIngredientString,
   isUncountableFood,
 } from '@/lib/ingredient-amount'
-import { formatQty } from '@/components/recipes/CookReviewBody'
+import { fetchMealToBuyDetail } from '@/lib/api/grocery'
+import { toBuyEntriesFromRecipe } from '@/lib/meal-to-buy'
 import { ingredientLabel, ingredientParts, scaledIngredientLabel } from '@/lib/recipe-helpers'
 import type { MealCookSession } from '@/lib/meal-cook-session'
 import type { MealDishFull } from '@/types/meals'
@@ -110,30 +111,62 @@ describe('other display paths (issue #892 sweep)', () => {
     expect(scaledIngredientLabel({ name: 'Cumin', quantity: 0.25, unit: 'tsp' }, 2)).toBe('0.5 tsp Cumin')
   })
 
-  it('a grocery line (shared text)', () => {
-    expect(formatGroceryLine({ name: 'cinnamon', quantity: 0.25, unit: 'count' })).toBe('- Cinnamon')
-    expect(formatGroceryLine({ name: 'cinnamon', quantity: 0.25, unit: 'tsp' })).toBe('- Cinnamon (0.25 tsp)')
-    expect(formatGroceryLine({ name: 'eggs', quantity: 12, unit: 'item' })).toBe('- Eggs (12 items)')
+  it('a recipe-derived to-buy item from the service drops a spice count', async () => {
+    const item = (name: string, quantity: number, unit: string) => ({
+      name, dish_positions: [0], dish_names: ['Carrots'], quantity, unit, category: null,
+    })
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        to_buy: ['Cinnamon', 'Paprika', 'Milk'],
+        items: [item('Cinnamon', 0.25, 'count'), item('Paprika', 0.25, 'tsp'), item('Milk', 2, 'items')],
+      }),
+    }) as unknown as typeof fetch
+    const { items } = await fetchMealToBuyDetail('m1')
+    expect(items?.map((i) => [i.name, i.quantity, i.unit])).toEqual([
+      ['Cinnamon', null, null],
+      ['Paprika', 0.25, 'tsp'],
+      ['Milk', 2, 'items'],
+    ])
   })
 
-})
-
-describe('cook review deduction column (issue #892)', () => {
-  it('drops the count word from a spice or liquid, keeps it elsewhere', () => {
-    expect(formatQty(0.25, 'count', false, 'Cinnamon')).toBe('0.25')
-    expect(formatQty(0.25, 'count', true, 'olive oil')).toBe('≈ 0.25')
-    expect(formatQty(2, 'count', false, 'eggs')).toBe('2 count')
-    expect(formatQty(5, 'g', false, 'Cinnamon')).toBe('5 g')
-    expect(formatQty(null, 'count', false, 'Cinnamon')).toBe('—')
+  it('a chat recipe card to-buy entry drops a spice count', () => {
+    const recipe = {
+      title: 'Carrots',
+      ingredients: [
+        { name: 'Cinnamon', quantity: 0.25, unit: 'count' },
+        { name: 'Paprika', quantity: 0.25, unit: 'tsp' },
+      ],
+      ingredient_availability: [
+        { name: 'Cinnamon', status: 'missing' },
+        { name: 'Paprika', status: 'missing' },
+      ],
+    } as unknown as Parameters<typeof toBuyEntriesFromRecipe>[0]
+    expect(toBuyEntriesFromRecipe(recipe)).toEqual([
+      { name: 'Cinnamon', quantity: null, unit: null },
+      { name: 'Paprika', quantity: 0.25, unit: 'tsp' },
+    ])
   })
+
+  it('pantry-sourced grocery amounts are not recipe lines: "Milk (2 items)" survives', () => {
+    expect(formatGroceryLine({ name: 'milk', quantity: 2, unit: 'items' })).toBe('- Milk (2 items)')
+    expect(formatGroceryLine({ name: 'milk', quantity: 1, unit: 'item' })).toBe('- Milk (1 item)')
+    expect(formatGroceryLine({ name: 'cinnamon', quantity: 1, unit: 'count' })).toBe('- Cinnamon (1 count)')
+  })
+
+  it('a recipe line in "items" is a real amount, not "to taste"', () => {
+    expect(ingredientLabel({ name: 'Milk', quantity: 2, unit: 'items' })).toBe('2 items Milk')
+  })
+
 })
 
 describe('cleanIngredientAmount / cleanIngredientString', () => {
   it.each([
     ['Cinnamon', 0.25, 'count'],
-    ['ground cumin', 0.25, 'item'],
+    ['ground cumin', 0.25, 'ct'],
     ['Black pepper', 0.1, 'count'],
-    ['garlic powder', 0.5, 'items'],
+    ['garlic powder', 0.5, 'counts'],
+    ['molasses', 0.25, 'count'],
     ['red pepper flakes', 0.25, null],
     ['olive oil', 0.5, 'count'],
     ['soy sauce', 0.25, 'count'],
@@ -155,6 +188,9 @@ describe('cleanIngredientAmount / cleanIngredientString', () => {
     ['red bell pepper', 1, 'count'],
     ['eggs', 2, 'count'],
     ['onion', 0.5, 'count'],
+    ['milk', 2, 'items'],
+    ['olive oil', 1, 'item'],
+    ['asparagus', 0.5, 'count'],
     ['lemon', 0.5, null],
     ['cumin', null, null],
   ])('%s %s %s is untouched', (name, quantity, unit) => {
@@ -166,6 +202,7 @@ describe('cleanIngredientAmount / cleanIngredientString', () => {
     expect(cleanIngredientString('1/4 count ground cumin')).toBe('ground cumin, to taste')
     expect(cleanIngredientString('1/4 tsp ground cumin')).toBe('1/4 tsp ground cumin')
     expect(cleanIngredientString('6 count carrots')).toBe('6 count carrots')
+    expect(cleanIngredientString('2 items milk')).toBe('2 items milk')
     expect(cleanIngredientString('salt to taste')).toBe('salt to taste')
   })
 
@@ -187,6 +224,9 @@ describe('cleanIngredientAmount / cleanIngredientString', () => {
     'water',
     'lemon juice',
     'kosher salt, to taste',
+    'molasses',
+    'dark molasses',
+    'hummus',
   ])('%s is uncountable', (name) => {
     expect(isUncountableFood(name)).toBe(true)
   })
@@ -204,6 +244,8 @@ describe('cleanIngredientAmount / cleanIngredientString', () => {
     'chicken breast',
     'lemon',
     'garlic',
+    'asparagus',
+    'couscous',
     '',
   ])('%s is countable', (name) => {
     expect(isUncountableFood(name)).toBe(false)

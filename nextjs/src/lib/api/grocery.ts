@@ -10,6 +10,8 @@
  * `addToGroceryList(userId, names)` after the user confirms.
  */
 
+import { cleanIngredientAmount } from '@/lib/ingredient-amount'
+
 /** A readable message from a non-2xx body: the proxy passes the AI service's
  *  `{ detail }` through. */
 async function failure(res: Response, fallback: string): Promise<Error> {
@@ -77,12 +79,15 @@ function parseItems(raw: unknown): MealToBuyItem[] | null {
     // The amount fields are additive (issue #850): an older service omits them, which is
     // "no amount", not a malformed item.
     const quantity = typeof e.quantity === 'number' && Number.isFinite(e.quantity) ? e.quantity : null
+    const unit = quantity !== null && typeof e.unit === 'string' && e.unit.trim() ? e.unit.trim() : null
+    // The amount is a recipe line's: a count of a spice or liquid is no amount (#892).
+    const toTaste = cleanIngredientAmount(e.name, quantity, unit).toTaste
     items.push({
       name: e.name,
       dishPositions: positions as number[],
       dishNames: names as string[],
-      quantity,
-      unit: quantity !== null && typeof e.unit === 'string' && e.unit.trim() ? e.unit.trim() : null,
+      quantity: toTaste ? null : quantity,
+      unit: toTaste ? null : unit,
       category: typeof e.category === 'string' && e.category.trim() ? e.category.trim() : null,
     })
   }

@@ -72,9 +72,10 @@ class TestIngredientBoundary:
         ("name", "quantity", "unit"),
         [
             ("cinnamon", 0.25, "count"),
-            ("ground cumin", 0.25, "item"),
+            ("ground cumin", 0.25, "ct"),
             ("black pepper", 0.1, "count"),
-            ("garlic powder", 0.5, "items"),
+            ("garlic powder", 0.5, "counts"),
+            ("molasses", 0.25, "count"),
             ("red pepper flakes", 0.25, None),  # a fraction with no unit at all
             ("olive oil", 0.5, "count"),
             ("soy sauce", 0.25, "count"),
@@ -101,6 +102,9 @@ class TestIngredientBoundary:
             ("jalapeno pepper", 2, "count"),
             ("eggs", 2, "count"),
             ("onion", 0.5, "count"),
+            ("milk", 2, "items"),  # "items" is the pantry package unit, a real amount
+            ("olive oil", 1, "item"),
+            ("asparagus", 0.5, "count"),
             ("lemon", 0.5, None),
             ("cumin", None, None),
         ],
@@ -133,6 +137,9 @@ class TestUncountableFood:
             "water",
             "lemon juice",
             "kosher salt, to taste",
+            "molasses",
+            "dark molasses",
+            "hummus",
         ],
     )
     def test_spices_powders_and_liquids(self, name: str) -> None:
@@ -153,6 +160,8 @@ class TestUncountableFood:
             "chicken breast",
             "lemon",
             "garlic",
+            "asparagus",
+            "couscous",
             "",
         ],
     )

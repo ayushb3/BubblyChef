@@ -19,7 +19,6 @@ import Chip from '@/components/ui/Chip'
 import { PIXEL_INK } from '@/components/ui/PixelPanel'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { formatAmount, titleCase } from '@/lib/format'
-import { cleanIngredientAmount } from '@/lib/ingredient-amount'
 import type { GroceryLine } from '@/lib/grocery'
 
 export interface GroceryLineRowProps {
@@ -99,11 +98,7 @@ export default function GroceryLineRow({
     }
   }
 
-  // A count of a spice or liquid is no amount at all, never "0.25 count" (#892).
-  const amount =
-    line.quantity === null || cleanIngredientAmount(line.name, line.quantity, line.unit).toTaste
-      ? ''
-      : formatAmount(line.quantity, line.unit)
+  const amount = line.quantity === null ? '' : formatAmount(line.quantity, line.unit)
   const reason =
     line.checked || line.source === 'manual' ? null : line.source === 'depleted' ? 'Ran out' : 'Replace soon'
 

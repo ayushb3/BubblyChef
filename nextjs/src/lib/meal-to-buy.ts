@@ -13,6 +13,7 @@
  */
 
 import { groceryFoodKey } from '@/lib/grocery'
+import { cleanIngredientAmount } from '@/lib/ingredient-amount'
 import type { ManualLineInput } from '@/lib/grocery'
 import type { MealToBuyDetail, MealToBuyItem } from '@/lib/api/grocery'
 import type { ChatRecipeData } from '@/types/chat'
@@ -116,6 +117,9 @@ export function toBuyEntriesFromRecipe(recipe: ChatRecipeData): Array<string | M
       const ing = byName.get(a.name.trim().toLowerCase())
       if (!ing) return a.name
       const quantity = typeof ing.quantity === 'number' && Number.isFinite(ing.quantity) ? ing.quantity : null
-      return { name: ing.name, quantity, unit: quantity !== null ? (ing.unit ?? null) : null }
+      const unit = quantity !== null ? (ing.unit ?? null) : null
+      // A recipe line's count of a spice or liquid is no amount (#892).
+      if (cleanIngredientAmount(ing.name, quantity, unit).toTaste) return { name: ing.name, quantity: null, unit: null }
+      return { name: ing.name, quantity, unit }
     })
 }

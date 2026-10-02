@@ -61,6 +61,7 @@ _HEAD_WORDS: frozenset[str] = frozenset(
         "syrup",
         "honey",
         "molasses",
+        "hummus",
         "mustard",
         "ketchup",
         "mayonnaise",
@@ -85,8 +86,26 @@ _PEPPER_SEASONING_PREFIXES: frozenset[str] = frozenset(
     {"black", "white", "ground", "cracked", "freshly", "lemon", "and"}
 )
 
-# Units that just mean "this many of the thing", in recipe-speak.
-COUNT_LIKE_UNITS: frozenset[str] = frozenset({"count", "counts", "ct", "item", "items", "each"})
+# The count units a model writes for a spice. "item"/"items" is deliberately absent: it is
+# the pantry's default package unit, so "2 items" of milk is a real amount.
+COUNT_LIKE_UNITS: frozenset[str] = frozenset({"count", "counts", "ct"})
+
+# Words whose base form ends in "s": never singularised ("molasses" is not "molasse").
+_BASE_FORM_S_WORDS: frozenset[str] = frozenset(
+    {
+        "molasses",
+        "hummus",
+        "couscous",
+        "asparagus",
+        "watercress",
+        "lemongrass",
+        "citrus",
+        "swiss",
+        "brussels",
+        "harissa",
+        "hibiscus",
+    }
+)
 
 _NON_LETTERS = re.compile(r"[^a-z]+")
 _PARENTHETICAL = re.compile(r"\([^)]*\)")
@@ -100,6 +119,8 @@ def _words(name: str) -> list[str]:
     for word in words:
         if word == "leaves":
             out.append("leaf")
+        elif word in _BASE_FORM_S_WORDS:
+            out.append(word)
         elif len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
             out.append(word[:-1])
         else:
