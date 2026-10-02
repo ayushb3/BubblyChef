@@ -13,6 +13,7 @@
 
 import React from 'react'
 import { storageSheetHref } from '@/lib/kitchen/places'
+import { isCountLikeUnit, isUncountableFood } from '@/lib/ingredient-amount'
 import type {
   CookProposal,
   CompoundSuggestion,
@@ -87,10 +88,17 @@ function isQuietLine(m: IngredientMatch): boolean {
  * `approximate` marks an amount worked out from a typical weight, density or can
  * size rather than an exact conversion. It is still deducted; "≈" says so.
  */
-function formatQty(qty: number | null, unit: string | null, approximate = false): string {
+export function formatQty(
+  qty: number | null,
+  unit: string | null,
+  approximate = false,
+  name = '',
+): string {
   if (qty == null) return '—'
   const rounded = Math.round(qty * 100) / 100
-  const text = unit ? `${rounded} ${unit}` : String(rounded)
+  // "0.25 count" of a spice or liquid says nothing: the number alone, no unit word (#892).
+  const unitWord = isCountLikeUnit(unit) && isUncountableFood(name) ? null : unit
+  const text = unitWord ? `${rounded} ${unitWord}` : String(rounded)
   return approximate ? `≈ ${text}` : text
 }
 
@@ -596,10 +604,10 @@ export function CookReviewBody({
                         />
                       ) : m.approximate && m.deduct_qty != null ? (
                         <span title="An estimate, worked out from a typical size or weight">
-                          {formatQty(m.deduct_qty, m.base_unit, true)}
+                          {formatQty(m.deduct_qty, m.base_unit, true, m.ingredient_name)}
                         </span>
                       ) : (
-                        formatQty(m.deduct_qty, m.base_unit)
+                        formatQty(m.deduct_qty, m.base_unit, false, m.ingredient_name)
                       )}
                     </td>
                     <td className="py-1.5 text-right">

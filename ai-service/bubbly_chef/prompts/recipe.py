@@ -263,18 +263,35 @@ def grounded_recipe_system_prompt(
     )
 
 
-_GROUNDED_TAIL = """\
+# How an ingredient's amount is written (issue #892). Shared by every prompt that asks
+# for ingredient objects, so a spice never comes back as "0.25 count". No braces: this
+# text is spliced into templates that are later `.format()`-ed.
+INGREDIENT_AMOUNT_RULES = """\
+Amounts: use the unit a cook would measure with. Spices, herbs, salt, pepper, \
+powders, extracts, oils, sauces and other liquids are measured in "tsp", "tbsp", \
+"cup", "ml" or "g", or as a "pinch" or a "dash" for a trace amount; write 0.25 \
+"tsp", never 0.25 "count". Use "count" only for whole things you tally one by one \
+(eggs, onions, carrots), and never a fractional "count" of a spice, a powder or a \
+liquid. For an ingredient with no real amount ("salt to taste"), leave both \
+"quantity" and "unit" null.\
+"""
+
+_GROUNDED_TAIL = (
+    """\
 Generate a full recipe with:
 - title, description
 - ingredients: a list of objects, each with keys:
     "name" (ingredient name, e.g. "chicken breast"),
     "quantity" (numeric amount, e.g. 2),
-    "unit" (measurement unit ONLY — e.g. "cups", "tablespoon", "g", "count"; do NOT
+    "unit" (measurement unit ONLY — e.g. "cups", "tablespoon", "tsp", "g", "pinch"; do NOT
       write size descriptors like "medium", "large", or "small" here; those belong in
       "preparation" or can be omitted),
     "preparation" (optional prep note, e.g. "diced", or size hint like "medium"),
     "optional" (boolean, default false),
     "substitutes" (list of substitute ingredient names, default [])
+  """
+    + INGREDIENT_AMOUNT_RULES
+    + """
 - step-by-step instructions
 - steps: one entry per instruction, same order and count, each with
     "label" (a short imperative, 2-5 words, e.g. "Boil the pasta"),
@@ -296,6 +313,7 @@ Generate a full recipe with:
 Build the recipe from the listed ingredients where you can. \
 For any missing ingredients, suggest pantry substitutes where possible.\
 """
+)
 
 # The Gentle (default) rendering, kept under its old name for importers.
 GROUNDED_RECIPE_SYSTEM_PROMPT = grounded_recipe_system_prompt("gentle")
@@ -436,7 +454,8 @@ def recipe_generation_prompt(expiry_priority: ExpiryPriority = DEFAULT_EXPIRY_PR
     criteria = [
         "Uses ingredients from the user's pantry when possible",
         _GENERATION_EXPIRY_CRITERIA[expiry_priority],
-        "Clearly lists all ingredients with quantities and units",
+        "Clearly lists all ingredients with quantities and units -- spices, powders and "
+        'liquids in tsp, tbsp, cup, ml, g or "pinch", never a fractional "count"',
         "Provides clear, numbered step-by-step instructions",
         "Estimates prep and cook time realistically",
         "Gives each instruction a `steps` entry at the same index with its label, "

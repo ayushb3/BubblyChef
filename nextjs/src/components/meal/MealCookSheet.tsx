@@ -21,6 +21,7 @@ import type { MealCookProposal, MealCookErrorKind, MealIngredientMatch } from '@
 import type { DeductionItem, IngredientMatch } from '@/types/recipes'
 import SkippedDeductionsNotice from '@/components/cook/SkippedDeductionsNotice'
 import { skippedTotal } from '@/lib/cook-skipped'
+import { cleanIngredientAmount } from '@/lib/ingredient-amount'
 
 export type MealCookSheetState = 'loading' | 'review' | 'confirming' | 'success' | 'error'
 
@@ -70,7 +71,9 @@ function meaLineSourceNote(m: IngredientMatch): string | null {
   const sources = (m as MealIngredientMatch).sources
   if (!sources || distinctSourceDishCount(m) < 2) return null
   const parts = sources.map((s) =>
-    s.ingredient_qty != null && s.ingredient_unit
+    s.ingredient_qty != null &&
+    s.ingredient_unit &&
+    !cleanIngredientAmount(s.ingredient_name, s.ingredient_qty, s.ingredient_unit).toTaste
       ? `${s.dish_title} (${s.ingredient_qty} ${s.ingredient_unit})`
       : s.dish_title,
   )

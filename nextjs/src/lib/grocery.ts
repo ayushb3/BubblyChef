@@ -16,6 +16,7 @@
  * Regenerate keeps the user's checked and manual lines and refreshes the rest.
  */
 
+import { cleanIngredientAmount } from '@/lib/ingredient-amount'
 import { daysUntilExpiry } from '@/lib/pantry-helpers'
 
 export type GrocerySource = 'depleted' | 'expiring' | 'manual'
@@ -401,7 +402,10 @@ function formatNumber(n: number): string {
 /** `- Eggs (12 items)`; the amount is dropped when the line has none. */
 export function formatGroceryLine(line: Pick<GroceryLine, 'name' | 'quantity' | 'unit'>): string {
   const name = capitalise(line.name.trim())
-  if (line.quantity === null) return `- ${name}`
+  // A count of a spice or liquid is no amount at all (#892).
+  if (line.quantity === null || cleanIngredientAmount(line.name, line.quantity, line.unit).toTaste) {
+    return `- ${name}`
+  }
   let unit = line.unit?.trim() ?? ''
   if (unit === 'item' && line.quantity !== 1) unit = 'items'
   return `- ${name} (${unit ? `${formatNumber(line.quantity)} ${unit}` : formatNumber(line.quantity)})`

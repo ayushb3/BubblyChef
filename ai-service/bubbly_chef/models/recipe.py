@@ -16,6 +16,8 @@ from pydantic import (
     model_validator,
 )
 
+from bubbly_chef.domain.uncountable import clean_ingredient_amount
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,6 +51,20 @@ class Ingredient(BaseModel):
         from bubbly_chef.domain.normalizer import SIZE_ADJECTIVE_UNITS
 
         return None if v.lower().strip() in SIZE_ADJECTIVE_UNITS else v
+
+    @model_validator(mode="after")
+    def _no_count_of_an_uncountable_food(self) -> "Ingredient":
+        """A spice, powder or liquid is never "0.25 count" (issue #892).
+
+        The model sometimes writes `unit: "count"` for "1/4 tsp cinnamon" or "a pinch
+        of pepper". The real unit is gone, so the amount is dropped (the line reads
+        "to taste") rather than shown as a count. Real units ("tsp", "pinch") stay.
+        """
+        quantity, unit = clean_ingredient_amount(self.name, self.quantity, self.unit)
+        if (quantity, unit) != (self.quantity, self.unit):
+            self.quantity = quantity
+            self.unit = unit
+        return self
 
 
 # =============================================================================

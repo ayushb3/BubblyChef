@@ -28,6 +28,7 @@ The #288 coherence guard and the "explicit request wins" rule hold at every leve
 """
 
 from bubbly_chef.domain.expiry_priority import DEFAULT_EXPIRY_PRIORITY, ExpiryPriority
+from bubbly_chef.prompts.recipe import INGREDIENT_AMOUNT_RULES
 
 # Shared by both option-stage system prompts (issue #758). The model used to read
 # "every option must have at least one side" and return exactly one side every
@@ -198,12 +199,13 @@ Generate a full recipe with:
 - ingredients: a list of objects, each with keys:
     "name" (ingredient name, e.g. "chicken breast"),
     "quantity" (numeric amount, e.g. 2),
-    "unit" (measurement unit ONLY -- e.g. "cups", "tablespoon", "g", "count"; \
-do NOT write size descriptors like "medium", "large", or "small" here; those \
-belong in "preparation" or can be omitted),
+    "unit" (measurement unit ONLY -- e.g. "cups", "tablespoon", "tsp", "g", \
+"pinch"; do NOT write size descriptors like "medium", "large", or "small" \
+here; those belong in "preparation" or can be omitted),
     "preparation" (optional prep note, e.g. "diced", or size hint like "medium"),
     "optional" (boolean, default false),
     "substitutes" (list of substitute ingredient names, default [])
+  """ + INGREDIENT_AMOUNT_RULES + """
 - step-by-step instructions
 - steps: one entry per instruction, same order and count, each with
     "label" (a short imperative, 2-5 words, e.g. "Boil the pasta"),
