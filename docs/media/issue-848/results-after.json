@@ -16,8 +16,7 @@
   "mealStartClear": true,
   "wake1": 1,
   "wake2": 2,
-  "askShown": true,
-  "permissionAsks": 1,
+  "askShown": false,
   "wakeReleasedOnLeave": 0,
   "chipLinkCount": 1,
   "chipHref": "/meals/meal-848/cook",
@@ -25,13 +24,8 @@
   "home1": "Back to the Weeknight dinner? You were on step 2 of 3.I finished itPick up at step 2",
   "home2": "Back to the Weeknight dinner? You were on step 2 of 3.I finished itPick up at step 2",
   "finished": {
-    "oscStarts": 2,
-    "notifications": [
-      {
-        "title": "Eggs is done",
-        "body": "Your timer finished."
-      }
-    ]
+    "oscStarts": 0,
+    "notifications": []
   },
   "wakeLeave": {
     "urlAfter": "http://127.0.0.1:3410/meals/meal-848",
@@ -39,5 +33,5 @@
     "releasesBefore": 0,
     "releasesAfter": 1
   },
-  "aiHitsBlocked": 11
+  "aiHitsBlocked": 14
 }
