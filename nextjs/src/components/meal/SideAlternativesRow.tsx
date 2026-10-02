@@ -11,6 +11,7 @@
  */
 
 import { motion } from 'framer-motion'
+import BubblesMascot from '@/components/ui/BubblesMascot'
 
 export interface SideAlternative {
   name: string
@@ -60,19 +61,36 @@ export default function SideAlternativesRow({
       </div>
 
       {state === 'loading' && (
-        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Loading alternatives" aria-busy="true">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              aria-hidden="true"
-              className="flex-shrink-0 w-40 h-24 rounded-2xl animate-pulse"
-              style={{ background: 'var(--color-bg)', border: '1.5px solid var(--color-border)' }}
-              data-testid="side-alternative-skeleton"
-            />
-          ))}
-          <span className="sr-only" role="status">
-            Loading alternatives…
-          </span>
+        <div className="flex flex-col gap-2" aria-busy="true">
+          {/* Issue #887: Bubbles says what the wait is, over cards in the same
+              slots the alternatives will land in. One polite status region. */}
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true">
+              <BubblesMascot state="thinking" size={32} />
+            </span>
+            <p role="status" className="text-xs font-bold" style={{ color: 'var(--color-muted)' }}>
+              Bubbly is thinking of sides…
+            </p>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                aria-hidden="true"
+                className="flex-shrink-0 w-40 rounded-2xl p-3 flex flex-col gap-2 min-h-[88px]"
+                style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
+                data-testid="side-alternative-skeleton"
+              >
+                {[['w-3/4', 'h-3'], ['w-full', 'h-2'], ['w-1/2', 'h-2']].map(([w, h], j) => (
+                  <span
+                    key={j}
+                    className={`block rounded-full motion-safe:animate-pulse ${w} ${h}`}
+                    style={{ background: 'var(--color-border)', animationDelay: `${i * 120}ms` }}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -118,7 +136,13 @@ export default function SideAlternativesRow({
                   whileTap={isDisabled || isPending ? undefined : { scale: 0.97 }}
                   className={[
                     'flex-shrink-0 w-40 text-left rounded-2xl p-3 flex flex-col gap-1 min-h-[44px]',
-                    isDisabled || isPending ? 'opacity-50 cursor-default' : 'cursor-pointer hover:brightness-97 active:brightness-90',
+                    // The picked card stays at full strength (it is the one working);
+                    // the others dim. Both are inert while a pick is in flight.
+                    isPending
+                      ? 'cursor-default'
+                      : isDisabled
+                        ? 'opacity-50 cursor-default'
+                        : 'cursor-pointer hover:brightness-97 active:brightness-90',
                   ].join(' ')}
                   style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-border)' }}
                 >
@@ -136,7 +160,13 @@ export default function SideAlternativesRow({
                     </span>
                   )}
                   {isPending && (
-                    <span className="text-[11px] font-semibold" style={{ color: 'var(--color-primary-dark)' }}>
+                    <span
+                      data-testid="side-working"
+                      aria-hidden="true"
+                      className="flex items-center gap-1 text-[11px] font-semibold"
+                      style={{ color: 'var(--color-primary-dark)' }}
+                    >
+                      <BubblesMascot state="thinking" size={28} />
                       Building…
                     </span>
                   )}

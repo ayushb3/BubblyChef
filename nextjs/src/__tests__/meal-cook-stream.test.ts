@@ -23,6 +23,7 @@ import {
   type NowCard,
   type StreamStep,
 } from '@/lib/meal-cook-stream'
+import { cookedDishIds } from '@/lib/meal-cook-deduction'
 import { scheduleMeal, type SchedulerDish } from '@/lib/meal-scheduler'
 import type { MealCookSession } from '@/lib/meal-cook-session'
 import type { Step } from '@/types/recipes'
@@ -902,10 +903,10 @@ describe('canStartEarly (issue #663)', () => {
   }
   const stepB: StreamStep = { ...stepA, key: 'main:1', step_index: 1, label: 'Serve', start: 10, end: 12 }
 
-  it('is false for an upcoming card with waiting_on, true without', () => {
+  it('is true for an upcoming card whether or not it is waiting_on a running step (issue #890)', () => {
     const waiting: NowCard = { kind: 'upcoming', step: stepB, starts_in_minutes: 5, waiting_on: stepA }
     const free: NowCard = { kind: 'upcoming', step: stepB, starts_in_minutes: 5 }
-    expect(canStartEarly(waiting)).toBe(false)
+    expect(canStartEarly(waiting)).toBe(true)
     expect(canStartEarly(free)).toBe(true)
     expect(canStartEarly({ ...free, waiting_on: undefined })).toBe(true)
   })
@@ -992,7 +993,8 @@ describe('canStartEarly (issue #663)', () => {
     if (result.now.kind === 'upcoming') {
       expect(result.now.step.key).toBe('main:2')
       expect(result.now.waiting_on?.key).toBe('main:0')
-      expect(canStartEarly(result.now)).toBe(false)
+      // Issue #890 — waiting on a running step never locks the cook out.
+      expect(canStartEarly(result.now)).toBe(true)
     }
   })
 
@@ -1024,6 +1026,114 @@ describe('canStartEarly (issue #663)', () => {
       expect(result.now.step.key).toBe('main:2')
       expect(result.now.waiting_on).toBeUndefined()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue #890 — a step started while the hands-off step it follows is still
+// running (the oven preheats while you season the carrots).
+// ---------------------------------------------------------------------------
+
+describe('Start now while a dependency is running (issue #890)', () => {
+  const carrots: SchedulerDish = {
+    dish_id: 'main',
+    column: 'main',
+    title: 'Carrots',
+    steps: [
+      step({ text: 'Preheat the oven to 220C', label: 'Preheat the oven', ongoing_label: 'the oven preheats', duration_minutes: 10, hands_on: false }),
+      step({ text: 'Season the carrots', label: 'Season the carrots', duration_minutes: 5, hands_on: true, depends_on: [0] }),
+      step({ text: 'Roast the carrots', label: 'Roast the carrots', duration_minutes: 20, hands_on: false, depends_on: [0, 1] }),
+    ],
+  }
+  const preheatRunning = (): MealCookSession =>
+    session({
+      dish_ids: ['main'],
+      steps: { 'main:0': { status: 'running', started_at_minutes: 0, extra_minutes: 0, timer_id: 'timer-1' } },
+    })
+  const derive = (s: MealCookSession, now: number) =>
+    deriveStream({ dishes: [carrots], exclusive_tags: [], session: s, now_minutes: now })
+  const stepOf = (s: MealCookSession, now: number, key: string): StreamStep => {
+    const found = buildStreamSteps([carrots], derive(s, now).timeline).find((x) => x.key === key)
+    if (!found) throw new Error(`no step ${key}`)
+    return found
+  }
+
+  it('reproduces the lock: the next step is upcoming, waiting on the running preheat, and can start now', () => {
+    const result = derive(preheatRunning(), 2)
+    expect(result.now.kind).toBe('upcoming')
+    if (result.now.kind !== 'upcoming') return
+    expect(result.now.step.key).toBe('main:1')
+    expect(result.now.waiting_on?.key).toBe('main:0')
+    expect(canStartEarly(result.now)).toBe(true)
+  })
+
+  it('starting it makes it the active step while the preheat stays running, untouched', () => {
+    const before = preheatRunning()
+    const started = recordStartEarly(before, stepOf(before, 2, 'main:1'), 2)
+
+    expect(started.steps['main:0']).toEqual(before.steps['main:0'])
+    expect(started.steps['main:1']).toMatchObject({ status: 'running', started_at_minutes: 2 })
+
+    const result = derive(started, 2)
+    expect(result.now).toMatchObject({ kind: 'active', step: { key: 'main:1' } })
+    expect(result.running.map((r) => r.key)).toEqual(['main:0'])
+    // The preheat's own placement is unchanged: still ends at minute 10.
+    expect(stepOf(started, 2, 'main:0')).toMatchObject({ start: 0, end: 10 })
+  })
+
+  it('a step that follows both still waits for the preheat after the early step is done', () => {
+    const before = preheatRunning()
+    let s = recordStartEarly(before, stepOf(before, 2, 'main:1'), 2)
+    s = recordDone(s, stepOf(s, 7, 'main:1'), 7)
+
+    const result = derive(s, 7)
+    expect(result.now.kind).toBe('upcoming')
+    if (result.now.kind !== 'upcoming') return
+    expect(result.now.step.key).toBe('main:2')
+    // Ordering holds: roasting is placed after the preheat ends, not at minute 7.
+    expect(result.now.step.start).toBeGreaterThanOrEqual(10)
+    expect(result.now.waiting_on?.key).toBe('main:0')
+
+    // The preheat finishing later unblocks it normally.
+    const afterPreheat = recordDone(s, stepOf(s, 10, 'main:0'), 10)
+    const unblocked = derive(afterPreheat, 10)
+    expect(unblocked.now).toMatchObject({ kind: 'active', step: { key: 'main:2' } })
+  })
+
+  it('"Done early" on the running preheat marks it done at now and unblocks its dependents', () => {
+    const before = preheatRunning()
+    const early = recordDone(before, stepOf(before, 4, 'main:0'), 4)
+    expect(early.steps['main:0']).toMatchObject({ status: 'done', ended_at_minutes: 4 })
+
+    const result = derive(early, 4)
+    expect(result.now.kind).toBe('upcoming')
+    if (result.now.kind !== 'upcoming') return
+    expect(result.now.step.key).toBe('main:1')
+    expect(result.now.waiting_on).toBeUndefined()
+  })
+
+  it('the preheat finishing last still finishes the cook, and the dish counts as cooked', () => {
+    const two: SchedulerDish = { ...carrots, steps: carrots.steps.slice(0, 2) }
+    const run = (s: MealCookSession, now: number) =>
+      deriveStream({ dishes: [two], exclusive_tags: [], session: s, now_minutes: now })
+    const find = (s: MealCookSession, now: number, key: string): StreamStep => {
+      const found = buildStreamSteps([two], run(s, now).timeline).find((x) => x.key === key)
+      if (!found) throw new Error(`no step ${key}`)
+      return found
+    }
+
+    const before = preheatRunning()
+    let s = recordStartEarly(before, find(before, 2, 'main:1'), 2)
+    s = recordDone(s, find(s, 7, 'main:1'), 7)
+
+    // Everything but the preheat is done: not finished, the cook waits on it.
+    expect(isMealCookFinished(s, [two])).toBe(false)
+    expect(run(s, 7).now).toMatchObject({ kind: 'waiting', running: [{ key: 'main:0' }] })
+
+    s = recordDone(s, find(s, 10, 'main:0'), 10)
+    expect(isMealCookFinished(s, [two])).toBe(true)
+    expect(run(s, 10).now.kind).toBe('finished')
+    expect(cookedDishIds([two], s)).toEqual(['main'])
   })
 })
 
