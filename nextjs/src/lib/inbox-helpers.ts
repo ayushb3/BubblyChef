@@ -2,9 +2,10 @@
  * Notification-center derivation (issue #496, Spec B.4 — "lite inbox").
  *
  * Pure, unit-testable derivation from data the caller already has (or has
- * fetched). No fetching, no persistence, no read/unread — the hub is
- * recomputed from live state every time it's opened, per the issue's
- * explicit "compute-on-load" decision. `useInboxEntries` (hooks/) is the
+ * fetched). No fetching, no persistence of its own, no read/unread — the hub
+ * is recomputed from live state every time it's opened, per the issue's
+ * explicit "compute-on-load" decision; the only stored input is the caller's
+ * remembered dismissals (issue #906), which filter the computed entries. `useInboxEntries` (hooks/) is the
  * thin fetch-and-call wrapper; this file is the logic that's actually worth
  * testing in isolation.
  *

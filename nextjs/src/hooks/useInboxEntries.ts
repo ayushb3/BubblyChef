@@ -7,10 +7,18 @@
  * the actually-tested pure logic) — server state goes through React Query
  * per CLAUDE.md's "React Query for server state only" rule, same convention
  * as `useDecorations`/`useBubbles` (`lib/api/kitchen.ts`, `lib/api/bubbles.ts`).
- * "Compute-on-load" (the issue's explicit decision) means no persistence
- * layer of its own — the cache here is ordinary React Query staleness, not
- * a stored inbox, and `refresh()` (called when the bell opens) just asks
- * React Query to refetch.
+ * "Compute-on-load" (the issue's explicit decision) means the entries
+ * themselves are never stored — the cache here is ordinary React Query
+ * staleness, not a stored inbox, and `refresh()` (called when the bell opens)
+ * just asks React Query to refetch.
+ *
+ * The one thing persisted is the user's dismissals (issue #906): a per-user
+ * localStorage record (`lib/inbox-dismissals-store.ts`) mapping entry id to the
+ * state fingerprint it was dismissed in. It is read through
+ * `useSyncExternalStore` (so a dismissal in another tab or component updates
+ * the bell), written by `dismiss`/`dismissAll`, and reconciled in an effect
+ * that forgets dismissals whose entry is gone or has changed. It only hides
+ * entries; no pantry or grocery data is written.
  *
  * Timers (Spec B.3, issue #619) are wired below via `useCookingTimers()` —
  * the real client-side store, mounted at the layout level
