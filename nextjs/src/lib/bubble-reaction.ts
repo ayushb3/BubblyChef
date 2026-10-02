@@ -4,14 +4,15 @@
  * There are two reactions to an award: the global `BubblePop` (pinned top-right,
  * mounted once in `Providers`, visible on every page) and the header counter's
  * own "+N" tag (`BubblesCounter`, anchored under the number on the kitchen
- * home). Both watch the same balance, so after a put-away the home showed two at
+ * home, where the counter is the scene's top-right HUD, `KitchenBalance`, #907).
+ * Both watch the same balance, so after a put-away the home showed two at
  * once. The rule is one award moment per award: while the counter is actually on
  * screen, its tag is the reaction and `BubblePop` stays quiet; otherwise (the home
- * scrolled so the header is out of view, or any other page) `BubblePop` shows, so
- * an award is never left with no visible "+N".
+ * scrolled so the scene's corner is out of view, or any other page) `BubblePop`
+ * shows, so an award is never left with no visible "+N".
  *
- * "On screen" is measured, not assumed: the header is not sticky, so mounted is
- * not the same as visible. A counter registers its element with
+ * "On screen" is measured, not assumed: the scene scrolls with the page, so mounted
+ * is not the same as visible. A counter registers its element with
  * `useClaimBubbleReaction(ref, active)`; an `IntersectionObserver` tracks whether
  * at least half of it is in the viewport (the tag hangs just under it). Where
  * `IntersectionObserver` does not exist, the element's rectangle is checked at the

@@ -28,8 +28,10 @@
  * `--wall-*` custom properties, a theme change is one repaint (no crossfade: the
  * world is stepped, and `prefers-reduced-motion` has nothing to turn off).
  *
- * The balance and the streak left the scene with the redesign: the balance is
- * the header's pixel counter (`KitchenHeader`).
+ * The streak left the scene with the redesign (it is in the toolbar). The bubbles
+ * balance left for the header in #748 and came back in #907: it is the scene's
+ * HUD, the pixel counter in the wall's top-right corner (`KitchenBalance`, drawn by
+ * `KitchenWall`'s `hud` slot).
  */
 import Image from 'next/image'
 import type { ReactNode } from 'react'
@@ -40,6 +42,7 @@ import type { KitchenStock, PlaceKey, PlaceSummaries } from '@/lib/kitchen/place
 import { layoutStock } from '@/lib/kitchen/sprite-layout'
 import { planDinnerHref as defaultPlanDinnerHref } from '@/lib/chat-seed'
 import KitchenWall from '@/components/kitchen/KitchenWall'
+import KitchenBalance from '@/components/kitchen/KitchenBalance'
 import { KitchenSprites, WiltTags } from '@/components/kitchen/sprites/KitchenSprites'
 
 export interface UnlockedDecoration {
@@ -63,6 +66,12 @@ export interface KitchenSceneProps {
    * items, from `kitchenStock`. `null` or unset while the pantry is unknown.
    */
   stock?: KitchenStock | null
+  /**
+   * The bubbles balance, drawn as the HUD counter in the wall's top-right corner
+   * (issue #907). `null` or unset while it is unknown (loading or failed): no
+   * counter, never a made-up `0`.
+   */
+  balance?: number | null
   /** Hooks for issues #751 and #752; see `KitchenWall`. A given `spritesLayer` wins over `stock`. */
   spritesLayer?: ReactNode
   bubblesLayer?: ReactNode
@@ -93,6 +102,7 @@ export default function KitchenScene({
   onOpenPlace,
   planDinnerHref = defaultPlanDinnerHref(),
   stock = null,
+  balance = null,
   spritesLayer,
   bubblesLayer,
   sceneLabel,
@@ -136,6 +146,7 @@ export default function KitchenScene({
         incoming={incoming}
         bounce={bounce}
         onDoorTap={onDoorTap}
+        hud={balance !== null ? <KitchenBalance value={balance} /> : undefined}
       >
         {SLOTS.map((slot) => {
           const decoration = decorationBySlot.get(slot.key)

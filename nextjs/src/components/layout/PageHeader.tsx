@@ -17,8 +17,7 @@
  *    until the client clock is known); the line keeps its height either way, so
  *    nothing shifts. `eyebrowTestId` is a test hook for it.
  *  - `children`: the controls, laid out in a right-aligned row.
- *  - `className`: extra classes for the `<header>` (the kitchen adds
- *    `relative z-10` so its bubbles "+N" tag paints over the wall below).
+ *  - `className`: extra classes for the `<header>`.
  */
 import type { ReactNode } from 'react'
 
