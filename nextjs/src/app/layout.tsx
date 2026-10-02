@@ -79,7 +79,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-screen bg-[var(--color-bg)]">
+      {/* min-h-dvh, not min-h-screen: 100vh is the toolbar-collapsed height on a
+          phone, taller than the screen while the toolbar shows, which left every
+          page (and the fixed-height /chat column) a scrollable strip (#900). */}
+      <body className="min-h-dvh bg-[var(--color-bg)]">
         <Providers>
           {/* pb-20 clears the fixed BottomNav; --timer-dock-h is the timer dock's own
               height while it shows (0 otherwise, issue #848), so a timer never covers

@@ -12,6 +12,8 @@ import MessageBubble from '@/components/chat/MessageBubble'
 import PostMessageChips from '@/components/chat/PostMessageChips'
 import CookingContextCard from '@/components/chat/CookingContextCard'
 import ChatContextCard from '@/components/chat/ChatContextCard'
+import JumpToLatestPill from '@/components/chat/JumpToLatestPill'
+import { useChatViewportLock } from '@/hooks/useChatViewportLock'
 import TypingIndicator from '@/components/chat/TypingIndicator'
 import MealOpenWaitingCard from '@/components/chat/MealOpenWaitingCard'
 import RecipeCard, { compactPropsFromProposal, compactPropsFromSavedMeal } from '@/components/recipes/RecipeCard'
@@ -131,15 +133,9 @@ function dropSeedParams() {
 }
 
 function ChatSurface() {
-  // Root layout's <body> is `min-h-screen` (100vh), which on iOS Safari is taller
-  // than 100dvh while the toolbar is showing — enough to give the document a few
-  // pixels of scroll under the chat. Lock document scroll while /chat is mounted;
-  // the message list below is the only thing meant to scroll (issue #731).
-  useEffect(() => {
-    const root = document.documentElement
-    root.classList.add('overflow-hidden')
-    return () => root.classList.remove('overflow-hidden')
-  }, [])
+  // The message list below is the only thing meant to scroll: lock the document
+  // while /chat is mounted and undo any scroll it still gets (issues #731, #900).
+  useChatViewportLock()
 
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -1113,21 +1109,10 @@ function ChatSurface() {
           </div>
         )}
       </div>
-      {/* The pill gets its own row between the thread and the input, so it
-          never sits over a card's text (#847). The row shrinks the scroll area
-          while it shows; it appears only when the thread is off its end. */}
-      {showJump && (
-        <div className="flex flex-shrink-0 justify-center py-1.5">
-          <button
-            type="button"
-            data-testid="jump-to-latest"
-            onClick={jumpToLatest}
-            className="text-xs font-semibold text-[var(--color-primary-dark)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md px-3 py-1.5 rounded-full hover:bg-[var(--color-border)] transition-colors"
-          >
-            Jump to latest ↓
-          </button>
-        </div>
-      )}
+      {/* The pill floats over the bottom of the list (absolute, bare: no row or
+          band behind it), so it never resizes the list or moves the composer
+          (#900). It shows only while the thread is off its end. */}
+      {showJump && <JumpToLatestPill onClick={jumpToLatest} />}
       </div>
 
       {/* Input bar — pinned under the list (a flex row, not a fixed overlay) */}
