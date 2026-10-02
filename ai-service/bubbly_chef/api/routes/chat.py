@@ -8,6 +8,7 @@ Exposes these endpoints under /v1/chat:
 - GET  /v1/chat/sessions — List user's conversation sessions
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -19,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from bubbly_chef.api.auth import get_current_user_id
 from bubbly_chef.models.requests import ChatRequest, DismissUnansweredTurnRequest
 from bubbly_chef.repository.supabase_repo import get_repository
+from bubbly_chef.services.concurrent_reads import gather_reads
 from bubbly_chef.services.proposal_review import (
     is_amendment_proposal_turn,
     is_pantry_proposal_turn,
@@ -59,27 +61,41 @@ async def chat_stream(
         f"Chat stream: user={user_id}, conversation_id={conversation_id}, mode={request.mode}"
     )
 
-    # Load conversation history for context BEFORE saving user message
+    async def save_user_message(conv_id: str) -> None:
+        try:
+            repo = await get_repository()
+            await repo.save_message(
+                user_id=user_id,
+                conversation_id=conv_id,
+                role="user",
+                content=request.message,
+            )
+        except Exception as save_err:
+            logger.warning(f"Failed to save user message: {save_err}")
+
+    # A meal pick (issue #888) is decided by context.meal_option_id alone and its stage
+    # reads neither the history nor the message, so it skips the history read and saves
+    # the user turn alongside the workflow instead of in front of it; the assistant turn
+    # waits for that save, so the order in conversation_history is unchanged. A chip
+    # override (forced_intent) beats the pick in classify_intent and can reach nodes that
+    # do read history, so that turn takes the normal path.
+    meal_pick = bool((request.context or {}).get("meal_option_id")) and not request.forced_intent
+    user_save: asyncio.Task[list[None]] | None = None
+
     history: list[dict[str, Any]] = []
-    if conversation_id:
+    if conversation_id and meal_pick:
+        user_save = asyncio.create_task(gather_reads([save_user_message(conversation_id)]))
+        await asyncio.sleep(0)  # let the save's thread start now, not at the next await
+    elif conversation_id:
+        # Load conversation history for context BEFORE saving user message
         try:
             repo = await get_repository()
             history = await repo.get_history(user_id=user_id, conversation_id=conversation_id)
         except Exception as hist_err:
             logger.warning(f"Failed to load conversation history: {hist_err}")
 
-    # Persist user message after loading history (avoids duplicate in LLM context)
-    if conversation_id:
-        try:
-            repo = await get_repository()
-            await repo.save_message(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                role="user",
-                content=request.message,
-            )
-        except Exception as save_err:
-            logger.warning(f"Failed to save user message: {save_err}")
+        # Persist user message after loading history (avoids duplicate in LLM context)
+        await save_user_message(conversation_id)
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Wrap workflow streaming output as SSE events."""
@@ -96,6 +112,8 @@ async def chat_stream(
             """Save the assistant turn; a failure is a logged warning, never an error."""
             if not conversation_id or not content:
                 return False
+            if user_save is not None:
+                await user_save  # the user turn lands first (never raises: it logs)
             try:
                 repo = await get_repository()
                 intent_str = envelope.get("intent", "general_chat") if envelope else "general_chat"

@@ -93,6 +93,7 @@ from bubbly_chef.services.allergen_guard import (
     card_allergens,
     generate_allergen_safe,
 )
+from bubbly_chef.services.concurrent_reads import concurrent_reads
 from bubbly_chef.services.cook_matcher import match_ingredients
 from bubbly_chef.services.expiry_priority import get_stored_expiry_priority
 from bubbly_chef.services.food_exclusions import allergy_never_block, get_stored_food_exclusions
@@ -1598,15 +1599,23 @@ async def meal_pick_stage(state: WorkflowState) -> WorkflowState:
     # prompts, nor used for missing_ingredients (which is [] then -- there is
     # no stock to be missing from).
     pantry_grounded = is_pantry_grounded(constraints_echo.recipe_constraints)
-    pantry_items = await _pantry_items_for_matching(user_id) if pantry_grounded else []
-    # Re-read from the profile, never trusted from the retained echo (#500): an allergy
-    # added after the options were shown still binds the dishes built from them.
-    allergies = list((await get_stored_food_exclusions(user_id)).allergies)
+    # The three reads are independent, so they go out together (issue #888): they used
+    # to run one after another in front of the first model call.
+    # Allergies are re-read from the profile, never trusted from the retained echo (#500):
+    # one added after the options were shown still binds the dishes built from them.
     # Likewise the expiry priority (#502, #718): the profile's current setting, not the
     # one in force when the options were shown.
-    expiry_priority = (
-        await get_stored_expiry_priority(user_id) if pantry_grounded else DEFAULT_EXPIRY_PRIORITY
-    )
+    pantry_items: list[PantryItem] = []
+    expiry_priority = DEFAULT_EXPIRY_PRIORITY
+    if pantry_grounded:
+        pantry_items, exclusions, expiry_priority = await concurrent_reads(
+            _pantry_items_for_matching(user_id),
+            get_stored_food_exclusions(user_id),
+            get_stored_expiry_priority(user_id),
+        )
+    else:
+        exclusions = await get_stored_food_exclusions(user_id)
+    allergies = list(exclusions.allergies)
     scored_items = (
         _score_items_for_dish_prompt(
             pantry_items, constraints_echo.recipe_constraints, allergies, expiry_priority
