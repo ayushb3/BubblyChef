@@ -13,6 +13,7 @@ import PostMessageChips from '@/components/chat/PostMessageChips'
 import CookingContextCard from '@/components/chat/CookingContextCard'
 import ChatContextCard from '@/components/chat/ChatContextCard'
 import TypingIndicator from '@/components/chat/TypingIndicator'
+import MealOpenWaitingCard from '@/components/chat/MealOpenWaitingCard'
 import RecipeCard, { compactPropsFromProposal, compactPropsFromSavedMeal } from '@/components/recipes/RecipeCard'
 import PantryProposalCard from '@/components/chat/PantryProposalCard'
 import ClarificationCard from '@/components/chat/ClarificationCard'
@@ -247,6 +248,9 @@ function ChatSurface() {
    * writes nothing; the card's button is still the one confirm.
    */
   const [mealSaveFocus, setMealSaveFocus] = useState<Record<string, number>>({})
+  // The option a meal-option tap picked and the thread index its user message
+  // takes (issue #887): the waiting card shows only for that turn.
+  const [pickedOption, setPickedOption] = useState<{ option: MealOption; userIndex: number } | null>(null)
   /** In-flight POST promises keyed by msgId — the double-creation guard Open and Save share. */
   const mealCreateInFlight = useRef<Map<string, Promise<{ id: string; isDraft: boolean }>>>(new Map())
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
@@ -632,6 +636,9 @@ function ChatSurface() {
    * fuzzy-matched from the title text (contract: "Pick: the request").
    */
   const handlePickMealOption = (option: MealOption) => {
+    // Remember which option this turn picked, and where its user message will
+    // sit, so the wait can name it (issue #887). Nothing else is sent or fetched.
+    setPickedOption({ option, userIndex: messages.length })
     sendMessage(option.title, { meal_option_id: option.option_id })
   }
 
@@ -812,6 +819,16 @@ function ChatSurface() {
   const lastMsg = messages[messages.length - 1]
   const showTypingIndicator =
     isStreaming && lastMsg?.role === 'assistant' && !lastMsg.content
+
+  // The reply to a meal-option tap is the one being waited on: user turn at the
+  // remembered index, then the empty assistant turn as the last message.
+  const waitingOption =
+    showTypingIndicator &&
+    pickedOption &&
+    messages.length === pickedOption.userIndex + 2 &&
+    messages[pickedOption.userIndex]?.role === 'user'
+      ? pickedOption.option
+      : null
 
   const hasMessages = messages.length > 0
 
@@ -1023,7 +1040,16 @@ function ChatSurface() {
             ))}
 
             <AnimatePresence>
-              {showTypingIndicator && <TypingIndicator />}
+              {showTypingIndicator &&
+                (waitingOption ? (
+                  <MealOpenWaitingCard
+                    key="meal-open-waiting"
+                    title={waitingOption.title}
+                    dishes={waitingOption.dishes.map((d) => d.name)}
+                  />
+                ) : (
+                  <TypingIndicator key="typing" />
+                ))}
             </AnimatePresence>
           </div>
           {/* Blank room under the thread so a sent message can scroll to the top

@@ -5,7 +5,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import SideAlternativesRow, { type SideAlternative } from '@/components/meal/SideAlternativesRow'
 
 const ALTERNATIVES: SideAlternative[] = [
@@ -126,5 +126,68 @@ describe('SideAlternativesRow', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Issue #887 — waiting states for the add-a-side row.
+describe('SideAlternativesRow waiting states (issue #887)', () => {
+  it('while loading, says Bubbles is thinking of sides, beside an animated Bubbles', () => {
+    render(
+      <SideAlternativesRow state="loading" alternatives={[]} onPick={jest.fn()} onRetry={jest.fn()} onCancel={jest.fn()} />,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('Bubbles is thinking of sides…')
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByAltText('Bubbles thinking')).toBeInTheDocument()
+  })
+
+  it('skeletons take the same card slots as the alternatives (three, same width) and are hidden from assistive tech', () => {
+    const { rerender } = render(
+      <SideAlternativesRow state="loading" alternatives={[]} onPick={jest.fn()} onRetry={jest.fn()} onCancel={jest.fn()} />,
+    )
+    const skeletons = screen.getAllByTestId('side-alternative-skeleton')
+    expect(skeletons).toHaveLength(3)
+    for (const s of skeletons) expect(s).toHaveAttribute('aria-hidden', 'true')
+    const skeletonWidth = skeletons[0].className.match(/\bw-\d+\b/)?.[0]
+
+    rerender(
+      <SideAlternativesRow state="ready" alternatives={ALTERNATIVES} onPick={jest.fn()} onRetry={jest.fn()} onCancel={jest.fn()} />,
+    )
+    const card = screen.getAllByRole('listitem')[0]
+    expect(skeletonWidth).toBeDefined()
+    expect(card.className).toContain(skeletonWidth as string)
+  })
+
+  it('the picked card shows a working state at full strength while the others dim and cannot be tapped', () => {
+    const onPick = jest.fn()
+    render(
+      <SideAlternativesRow
+        state="ready"
+        alternatives={ALTERNATIVES}
+        pendingIndex={1}
+        onPick={onPick}
+        onRetry={jest.fn()}
+        onCancel={jest.fn()}
+      />,
+    )
+    const picked = screen.getByRole('listitem', { name: /Building Garlic green beans/ })
+    expect(within(picked).getByTestId('side-working')).toBeInTheDocument()
+    expect(within(picked).getByAltText('Bubbles thinking')).toBeInTheDocument()
+    expect(picked.className).not.toMatch(/\bopacity-50\b/)
+
+    for (const name of ['Pick Charred broccolini', 'Pick Roasted carrots']) {
+      const other = screen.getByRole('listitem', { name })
+      expect(other.className).toMatch(/\bopacity-50\b/)
+      expect(other).toBeDisabled()
+      expect(within(other).queryByTestId('side-working')).not.toBeInTheDocument()
+      fireEvent.click(other)
+    }
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
+  it('with nothing picked there is no working state anywhere', () => {
+    render(
+      <SideAlternativesRow state="ready" alternatives={ALTERNATIVES} onPick={jest.fn()} onRetry={jest.fn()} onCancel={jest.fn()} />,
+    )
+    expect(screen.queryByTestId('side-working')).not.toBeInTheDocument()
   })
 })

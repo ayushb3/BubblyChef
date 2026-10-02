@@ -29,6 +29,8 @@ jest.mock('framer-motion', () => {
 })
 
 jest.mock('@/lib/motion', () => ({
+  // BubblesMascot's thinking flip-book (#887) reads this; a fixed frame keeps these tests timer-free.
+  useSteppedFrame: () => 0,
   useMotionConfig: () => ({ reduced: false, springs: { soft: {}, snappy: {}, pop: {}, page: {} } }),
   springs: { soft: {}, snappy: {}, pop: {}, page: {} },
   heartPopVariants: {},

@@ -858,3 +858,77 @@ describe('meal screen — another meal\'s cook (S5, issue #654 §5)', () => {
     expect(getActiveMealCookSession('meal-2')).not.toBeNull()
   })
 })
+
+describe('meal screen — add a side waiting states (issue #887)', () => {
+  const ALTS = ['Charred broccolini', 'Garlic green beans', 'Roasted carrots'].map((name) => ({
+    role: 'side',
+    name,
+    blurb: 'Quick.',
+    key_ingredients: [name],
+    est_total_minutes: 10,
+    est_hands_on_minutes: 5,
+  }))
+
+  function oneSideMeal(): Meal {
+    const m = baseMeal()
+    return baseMeal({ dishes: [m.dishes[0], m.dishes[1]] })
+  }
+
+  it('shows skeleton alternatives while they load, then the real ones, with one request each', async () => {
+    fetchMeal.mockResolvedValue(oneSideMeal())
+    let resolveAlts: (v: unknown) => void = () => {}
+    fetchSideAlternatives.mockReturnValue(new Promise((resolve) => { resolveAlts = resolve }))
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a side' }))
+
+    expect(await screen.findAllByTestId('side-alternative-skeleton')).toHaveLength(3)
+    expect(screen.getByRole('status')).toHaveTextContent('Bubbles is thinking of sides…')
+    expect(fetchSideAlternatives).toHaveBeenCalledTimes(1)
+    expect(expandMealDish).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveAlts(ALTS)
+    })
+    expect(await screen.findAllByRole('listitem', { name: /^Pick / })).toHaveLength(3)
+    expect(screen.queryByTestId('side-alternative-skeleton')).not.toBeInTheDocument()
+    // Landing the alternatives made no further AI call and no write.
+    expect(fetchSideAlternatives).toHaveBeenCalledTimes(1)
+    expect(expandMealDish).not.toHaveBeenCalled()
+    expect(updateMeal).not.toHaveBeenCalled()
+  })
+
+  it('the picked card works (others dim) while it expands, using exactly the existing two calls', async () => {
+    fetchMeal.mockResolvedValue(oneSideMeal())
+    fetchSideAlternatives.mockResolvedValue(ALTS)
+    let resolveExpand: (v: unknown) => void = () => {}
+    expandMealDish.mockReturnValue(new Promise((resolve) => { resolveExpand = resolve }))
+    updateMeal.mockResolvedValue(baseMeal())
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Green salad', level: 3 })
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a side' }))
+    fireEvent.click(await screen.findByRole('listitem', { name: 'Pick Garlic green beans' }))
+
+    const picked = await screen.findByRole('listitem', { name: /Building Garlic green beans/ })
+    expect(within(picked).getByTestId('side-working')).toBeInTheDocument()
+    for (const name of ['Pick Charred broccolini', 'Pick Roasted carrots']) {
+      expect(screen.getByRole('listitem', { name })).toBeDisabled()
+    }
+
+    await act(async () => {
+      resolveExpand({
+        proposal_type: 'meal_dish',
+        role: 'side',
+        position: 2,
+        recipe: { title: 'Garlic green beans', instructions: ['Sauté'], steps: [step('Sauté')], servings: 2 },
+      })
+    })
+    await waitFor(() => expect(updateMeal).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByTestId('side-alternatives-row')).not.toBeInTheDocument())
+
+    expect(fetchSideAlternatives).toHaveBeenCalledTimes(1)
+    expect(expandMealDish).toHaveBeenCalledTimes(1)
+  })
+})
