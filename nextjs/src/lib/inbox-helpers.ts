@@ -22,7 +22,7 @@
  */
 
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
-import { cookThisHref } from '@/lib/chat-seed'
+import { cookThisHref, suggestHref } from '@/lib/chat-seed'
 
 /** Cap on entries actually shown; anything past this collapses into a count. */
 export const INBOX_CAP = 10
@@ -263,7 +263,8 @@ function cookNudgeEntry(): InboxEntry {
     tier: 'info',
     emoji: '🍳',
     copy: "You haven't cooked in a while — want a suggestion?",
-    href: '/chat',
+    // A new chat that asks for a suggestion (#905), not whatever was open last.
+    href: suggestHref(),
     sortKey: SORT_BUCKET.cook_nudge,
   }
 }

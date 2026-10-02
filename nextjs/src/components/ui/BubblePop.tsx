@@ -31,9 +31,9 @@ interface Pop {
  * balance is always treated as an initial load rather than a delta off the
  * previous user's leftover number (issue #525 review).
  *
- * Silent on the kitchen home while the header counter is on screen (issue #843):
- * the counter's own anchored "+N" tag is the reaction there, and two chips per
- * award read as a bug. With the home scrolled so the counter is out of view, this
+ * Silent on the kitchen home while the scene's counter is on screen (issues #843,
+ * #907): the counter's own anchored "+N" tag is the reaction there, and two chips
+ * per award read as a bug. With the home scrolled so the counter is out of view, this
  * pop shows as usual, so an award always has one visible "+N". See
  * `lib/bubble-reaction.ts`.
  *

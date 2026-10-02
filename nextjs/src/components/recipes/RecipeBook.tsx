@@ -25,7 +25,6 @@ import {
 } from '@/lib/cook-session'
 import { toRecipeIngredients } from '@/lib/cook-amendment'
 import SpringButton from '@/components/ui/SpringButton'
-import Chip from '@/components/ui/Chip'
 import { cookedLabel, searchRecipes } from '@/lib/recipe-search'
 
 interface RecipeBookProps {
@@ -37,15 +36,31 @@ interface RecipeBookProps {
    * asking "Resume cooking?" again: the user just said so on home.
    */
   resumeRecipeId?: string | null
+  /**
+   * The library keeps each tab's search query (issue #904): this tab starts from
+   * the query it had, and reports every change so the loader can hold it while the
+   * Meals tab is showing.
+   */
+  initialSearch?: string
+  onSearchChange?: (query: string) => void
+  /**
+   * The Favorites filter (issue #855). The heart toggle lives in the library's tab
+   * row (#904), so the loader holds it and passes it in; it survives a tab switch.
+   */
+  favoritesOnly?: boolean
 }
 
-export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }: RecipeBookProps) {
+export default function RecipeBook({
+  recipes,
+  onMutate,
+  resumeRecipeId = null,
+  initialSearch = '',
+  onSearchChange,
+  favoritesOnly = false,
+}: RecipeBookProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
-  // The Favourites chip (issue #855). Held here, not in the search bar, so it
-  // survives opening a recipe and coming back.
-  const [favouritesOnly, setFavouritesOnly] = useState(false)
+  const [search, setSearch] = useState(initialSearch)
   // The recipe opened in place (issue #801); null is the list. Edit and delete are
   // started from a card in the list or from the opened recipe, so they name their
   // own recipe instead of leaning on the opened one.
@@ -95,16 +110,16 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
     [recipes, favoriteOverrides, stepsOverrides],
   )
 
-  // Favourites first narrows the list, then the search ranks what is left. The
+  // Favorites first narrows the list, then the search ranks what is left. The
   // overrides are already merged in, so a heart tapped in the filtered list drops
   // the card at once.
   const filteredRecipes = useMemo(
     () =>
       searchRecipes(
-        favouritesOnly ? recipesWithOverrides.filter((r) => r.is_favorite) : recipesWithOverrides,
+        favoritesOnly ? recipesWithOverrides.filter((r) => r.is_favorite) : recipesWithOverrides,
         search,
       ),
-    [recipesWithOverrides, search, favouritesOnly],
+    [recipesWithOverrides, search, favoritesOnly],
   )
 
   const selectedRecipe = recipesWithOverrides.find((r) => r.id === selectedId) ?? null
@@ -206,9 +221,13 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
   // Reset hero image error state whenever the selected recipe changes
   useEffect(() => { setThumbError(false) }, [selectedId])
 
-  const handleSearch = useCallback((q: string) => {
-    setSearch(q)
-  }, [])
+  const handleSearch = useCallback(
+    (q: string) => {
+      setSearch(q)
+      onSearchChange?.(q)
+    },
+    [onSearchChange],
+  )
 
   /**
    * Opens the guided step-by-step cook flow. This is the "start cooking"
@@ -546,20 +565,9 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
         <>
           <div className="flex gap-2 items-center">
             <div className="flex-1">
-              <RecipeSearchBar onSearch={handleSearch} />
+              <RecipeSearchBar onSearch={handleSearch} initialValue={initialSearch} />
             </div>
             {importButton}
-          </div>
-
-          <div className="flex gap-2">
-            <Chip
-              emoji="❤️"
-              selected={favouritesOnly}
-              pressed={favouritesOnly}
-              onClick={() => setFavouritesOnly((on) => !on)}
-            >
-              Favourites
-            </Chip>
           </div>
 
           {filteredRecipes.length === 0 ? (
@@ -567,7 +575,7 @@ export default function RecipeBook({ recipes, onMutate, resumeRecipeId = null }:
               {search ? (
                 <>No results for &ldquo;{search}&rdquo;</>
               ) : (
-                'No favourites yet. Tap the heart on a recipe to keep it here.'
+                'No favorites yet. Tap the heart on a recipe to keep it here.'
               )}
             </p>
           ) : (

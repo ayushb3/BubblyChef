@@ -259,6 +259,12 @@ export interface KitchenWallProps {
    * button at all.
    */
   onDoorTap?: () => void
+  /**
+   * Issue #907: the scene's HUD (the bubbles counter), drawn last in the wall's
+   * top-right corner, inset 8px, over the art. It takes no taps and ends above
+   * the chalkboard's box (row 13) at 375 and 412 px; see `KitchenBalance`.
+   */
+  hud?: ReactNode
   /** The decoration slots. Absolutely positioned, in percent of the wall. */
   children?: ReactNode
 }
@@ -275,6 +281,7 @@ export default function KitchenWall({
   incoming = null,
   bounce = null,
   onDoorTap,
+  hud,
   children,
 }: KitchenWallProps) {
   const vars = {
@@ -413,6 +420,9 @@ export default function KitchenWall({
           style={tagStyle(PLACE_BOXES.chalkboard.box, PLACE_BOXES.chalkboard)}
         />
       </Link>
+
+      {/* The HUD (#907): last, so it paints over everything but takes no taps. */}
+      {hud}
     </div>
   )
 }

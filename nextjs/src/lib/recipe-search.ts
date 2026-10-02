@@ -91,6 +91,23 @@ export function searchRecipes<T extends Searchable>(recipes: T[], query: string)
   return scored.sort((a, b) => b.score - a.score).map(({ r }) => r)
 }
 
+/**
+ * The meals whose title or any dish title (main or sides) contains every word of
+ * `query` (issue #904). Same tokens as the recipe search, so the two tabs treat a
+ * query alike; list order is kept, and a blank query returns the list as it came.
+ */
+export function searchMeals<T extends { title: string; dishes: { title?: string | null }[] }>(
+  meals: T[],
+  query: string,
+): T[] {
+  const tokens = searchTokens(query)
+  if (tokens.length === 0) return meals
+  return meals.filter((m) => {
+    const haystack = [m.title, ...m.dishes.map((d) => d.title ?? '')].join('\n').toLowerCase()
+    return tokens.every((t) => haystack.includes(t))
+  })
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())

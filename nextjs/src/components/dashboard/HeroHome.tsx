@@ -367,8 +367,9 @@ export default function HeroHome({
 
   return (
     <div className="mx-auto flex w-full max-w-[480px] flex-col">
-      {/* Header (#748): eyebrow, title, the pixel bubbles counter. */}
-      <KitchenHeader eyebrow={eyebrow} balance={balance} />
+      {/* Header (#748): eyebrow, title, bell and profile. The bubbles counter is
+          the scene's HUD now (#907). */}
+      <KitchenHeader eyebrow={eyebrow} />
 
       {/* The kitchen: the pixel wall (#748) with the 12 decoration slots
           (#521) and the four storage places. Full-bleed, at the board's 96:80
@@ -380,6 +381,7 @@ export default function HeroHome({
         theme={kitchenTheme}
         places={places}
         stock={stock}
+        balance={balance}
         onOpenPlace={openPlace}
         planDinnerHref={planDinnerHref()}
         bubblesLayer={<PixelBubbles spot={bubblesSpot} cooking={cooking} />}

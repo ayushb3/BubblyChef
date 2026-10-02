@@ -173,6 +173,14 @@ describe('deriveInboxEntries', () => {
     expect(result.entries[0].kind).toBe('cook_nudge')
   })
 
+  it('the cook nudge opens a new chat that asks for a suggestion (#905), not a bare /chat', () => {
+    const result = deriveInboxEntries(
+      { pantryItems: [], recipes: [{ last_cooked_at: null }] },
+      NOW,
+    )
+    expect(result.entries[0].href).toBe('/chat?suggest=1')
+  })
+
   it('omits the cook nudge when a recipe was cooked within the last 7 days', () => {
     const result = deriveInboxEntries(
       { pantryItems: [], recipes: [{ last_cooked_at: '2026-09-20T00:00:00Z' }] },
