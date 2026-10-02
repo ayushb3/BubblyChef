@@ -59,6 +59,38 @@ class _Log:
     def __init__(self) -> None:
         self.t0 = time.perf_counter()
         self.events: list[tuple[str, float]] = []
+        # (name, start, end) of every blocking read/write, for overlap checks.
+        self.spans: list[tuple[str, float, float]] = []
+
+    @contextmanager
+    def span(self, name: str) -> Iterator[None]:
+        self.add(name)
+        start = self.now()
+        try:
+            yield
+        finally:
+            self.spans.append((name, start, self.now()))
+
+    def db_spans(self, *, before_first_llm: bool = False) -> list[tuple[str, float, float]]:
+        cutoff = self.first("llm:") if before_first_llm else float("inf")
+        return [sp for sp in self.spans if sp[0].startswith("db:") and sp[1] < cutoff]
+
+    def span_of(self, name: str) -> list[tuple[str, float, float]]:
+        return [sp for sp in self.spans if sp[0] == name]
+
+    def rounds(self, spans: list[tuple[str, float, float]]) -> int:
+        """How many back-to-back groups the spans form: reads that overlap in time
+        share a round, so N reads one after another are N rounds and N reads issued
+        together are 1. Structural, so it does not depend on how fast the machine is."""
+        rounds = 0
+        end = -1.0
+        for _, start, stop in sorted(spans, key=lambda sp: sp[1]):
+            if start >= end:
+                rounds += 1
+                end = stop
+            else:
+                end = max(end, stop)
+        return rounds
 
     def now(self) -> float:
         return time.perf_counter() - self.t0
@@ -85,8 +117,8 @@ class _BlockingRepo:
         self._meal = meal
 
     def _op(self, name: str) -> None:
-        self._log.add(f"db:{name}")
-        time.sleep(DB_S)
+        with self._log.span(f"db:{name}"):
+            time.sleep(DB_S)
 
     async def get_history(self, **_: Any) -> list[dict[str, Any]]:
         self._op("get_history")
@@ -313,21 +345,29 @@ class TestMealPick:
         assert saves == ["db:save_message:user", "db:save_message:assistant"]
 
     @pytest.mark.asyncio
-    async def test_dish_reads_overlap_so_the_model_starts_sooner(
-        self, client: AsyncClient
-    ) -> None:
-        # main: history + user save + session + 2 profile reads + pantry = 6 reads
-        # (0.6s) in front of the first model call. Now: session, then the profile and
-        # pantry reads together, with the user save off to the side = about 2 reads.
+    async def test_the_dish_reads_overlap_each_other(self, client: AsyncClient) -> None:
         log, _, _ = await _pick(client)
-        assert log.first("llm:") < DB_S * 3.5
+        reads = log.span_of("db:get_all_pantry_items") + log.span_of("db:get_profile")
+        assert len(reads) == 3  # pantry, allergies, expiry priority
+        assert log.rounds(reads) == 1
 
     @pytest.mark.asyncio
-    async def test_pick_critical_path_drops(self, client: AsyncClient) -> None:
-        _, elapsed, _ = await _pick(client)
-        # main: 6 reads + 1 model unit + update_session (2) + assistant save (1)
-        # = 9 * 0.1 + 0.2 = 1.1s. Now: 5 read-units + 0.2 = about 0.7s.
-        assert elapsed < 0.9
+    async def test_pick_has_fewer_rounds_in_front_of_the_model(self, client: AsyncClient) -> None:
+        # main: history, user save, session, 2 profile reads, pantry = 6 rounds in a row.
+        # Now: the session (with the user save beside it), then the three dish reads.
+        log, _, _ = await _pick(client)
+        assert log.rounds(log.db_spans(before_first_llm=True)) <= 3
+        # The model starts only after every one of those reads has finished.
+        first_llm = log.first("llm:")
+        assert all(end <= first_llm for _, _, end in log.db_spans(before_first_llm=True))
+
+    @pytest.mark.asyncio
+    async def test_pick_critical_path_has_fewer_rounds(self, client: AsyncClient) -> None:
+        # main: 9 database rounds in a row around the one model unit. Now 5 (session,
+        # dish reads, re-read session, update session, assistant save), the user save
+        # overlapping the first.
+        log, _, _ = await _pick(client)
+        assert log.rounds(log.db_spans()) <= 6
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +376,16 @@ class TestMealPick:
 
 
 class TestAddASide:
+    @staticmethod
+    def _assert_two_rounds_then_the_model(log: _Log) -> None:
+        # main: meal, allergies, expiry priority, pantry = 4 rounds one after another.
+        # Now: [meal | allergies], then [expiry priority | pantry], then the model.
+        before_model = log.db_spans(before_first_llm=True)
+        assert len(before_model) == 4
+        assert log.rounds(before_model) == 2
+        first_llm = log.first("llm:")
+        assert all(end <= first_llm for _, _, end in before_model)
+
     @pytest.mark.asyncio
     async def test_side_alternatives_one_model_call_and_reads_overlap(
         self, client: AsyncClient
@@ -350,9 +400,7 @@ class TestAddASide:
 
         assert response.status_code == 200
         assert log.llm_calls() == ["llm:MealSideAlternativesLLMResult"]
-        # main: meal + 2 profile reads + pantry, one after another (0.4s) + 0.2s model
-        # = 0.6s. Now: [meal | profile] then [pantry | profile] + model = about 0.4s.
-        assert elapsed < 0.5
+        self._assert_two_rounds_then_the_model(log)
 
     @pytest.mark.asyncio
     async def test_expand_dish_one_model_call_and_reads_overlap(
@@ -375,7 +423,7 @@ class TestAddASide:
 
         assert response.status_code == 200
         assert log.llm_calls() == ["llm:LLMRecipeResult"]
-        assert elapsed < 0.5
+        self._assert_two_rounds_then_the_model(log)
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +432,10 @@ class TestAddASide:
 
 
 class _SlowQuery:
-    def __init__(self, table: str, rows: dict[str, list[dict[str, Any]]]) -> None:
+    def __init__(self, table: str, rows: dict[str, list[dict[str, Any]]], log: _Log) -> None:
         self._table = table
         self._rows = rows
+        self._log = log
         self._filters: dict[str, Any] = {}
 
     def select(self, *_: Any) -> _SlowQuery:
@@ -403,7 +452,8 @@ class _SlowQuery:
         return self
 
     def execute(self) -> Any:
-        time.sleep(DB_S)  # a sync HTTP round trip
+        with self._log.span(f"db:{self._table}"):
+            time.sleep(DB_S)  # a sync HTTP round trip
         data = self._rows[self._table]
         if self._table == "recipes":
             data = [r for r in data if r["id"] == self._filters["id"]]
@@ -411,16 +461,18 @@ class _SlowQuery:
 
 
 class _SlowClient:
-    def __init__(self, rows: dict[str, list[dict[str, Any]]]) -> None:
+    def __init__(self, rows: dict[str, list[dict[str, Any]]], log: _Log) -> None:
         self._rows = rows
+        self._log = log
 
     def table(self, name: str) -> _SlowQuery:
-        return _SlowQuery(name, self._rows)
+        return _SlowQuery(name, self._rows, self._log)
 
 
 class TestGetMealWithDishes:
     @pytest.mark.asyncio
     async def test_dish_recipes_are_read_together_and_stay_in_position_order(self) -> None:
+        log = _Log()
         repo = SupabaseRepository.__new__(SupabaseRepository)
         repo.client = _SlowClient(  # type: ignore[assignment]
             {
@@ -431,12 +483,11 @@ class TestGetMealWithDishes:
                     {"role": "side", "position": 2, "recipe_id": "c"},
                 ],
                 "recipes": [{"id": i, "title": f"Recipe {i}"} for i in "abc"],
-            }
+            },
+            log,
         )
 
-        start = time.perf_counter()
         result = await repo.get_meal_with_dishes(USER, MEAL_ID)
-        elapsed = time.perf_counter() - start
 
         assert result is not None
         assert [d["recipe"]["title"] for d in result["dishes"]] == [
@@ -445,5 +496,8 @@ class TestGetMealWithDishes:
             "Recipe c",
         ]
         assert [d["position"] for d in result["dishes"]] == [0, 1, 2]
-        # main: meal + dishes + 3 recipes in a row = 5 reads (0.5s). Now 3 rounds.
-        assert elapsed < DB_S * 4
+        # main: meal, dishes and 3 recipes in a row = 5 rounds. Now 3: the recipes together.
+        recipe_reads = log.span_of("db:recipes")
+        assert len(recipe_reads) == 3
+        assert log.rounds(recipe_reads) == 1
+        assert log.rounds(log.spans) == 3

@@ -11,7 +11,8 @@ loop), which is what makes independent reads overlap. It is meant ONLY for the
 repository-backed reads on the meal pick and add-a-side paths: those touch nothing
 but the sync client (an `httpx.Client`, safe to share across threads). Never use it
 for anything that holds an object bound to the main loop, such as the `AIManager`'s
-async HTTP client.
+async HTTP client, and never pass it a write: its callers rely on a failed read
+surfacing as an exception, and a write needs its own error handling.
 """
 
 import asyncio
