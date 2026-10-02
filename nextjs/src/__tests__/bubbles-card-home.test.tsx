@@ -511,6 +511,21 @@ describe('case 5: a quiet moment', () => {
 
 describe('once a day, per nudge', () => {
   it('a nudge stays up for its visit and the next visit that day falls through', async () => {
+    fixClock(DINNER)
+    mockWorld()
+    const first = renderHome()
+
+    await card()
+    expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'mealtime')
+    first.unmount()
+
+    renderHome()
+    await card()
+    expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'quiet')
+  })
+
+  // Issue #848: the way back to a cook in progress is not a once-a-day nudge.
+  it('a cook in progress is still there on the next visit the same day', async () => {
     startGuidedCookSession('r-lemon')
     saveCookProgress('r-lemon', 3)
     mockWorld()
@@ -518,12 +533,12 @@ describe('once a day, per nudge', () => {
 
     await card()
     expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'cook')
-    expect(readHomeCardRecords().seen['cook:recipe:r-lemon:4']).toBe('2026-10-01')
     first.unmount()
 
     renderHome()
     await card()
-    expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'quiet')
+    expect(screen.getByTestId('bubbles-card')).toHaveAttribute('data-card-kind', 'cook')
+    expect(message()).toMatch(/Back to the .+\? You were on step 4/)
   })
 
   it('the next day it is fresh again', async () => {

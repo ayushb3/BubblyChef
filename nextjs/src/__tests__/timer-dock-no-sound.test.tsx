@@ -3,6 +3,9 @@
  * timer dock played a WebAudio chime when a timer finished. A finished timer
  * is signalled by the finished chip, the live-region announcement and (where
  * supported) a vibration, and never by audio.
+ *
+ * Issue #848: sound is opt-in (Profile > Timer sound), so this stays the
+ * default; `timer-dock-alerts.test.tsx` covers it switched on.
  */
 
 import React from 'react'

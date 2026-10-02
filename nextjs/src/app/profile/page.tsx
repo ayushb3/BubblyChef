@@ -12,6 +12,7 @@ import {
 } from '@/lib/expiry-priority'
 import SetUpStaplesButton from '@/components/profile/SetUpStaplesButton'
 import TakeTourButton from '@/components/profile/TakeTourButton'
+import TimerSoundToggle from '@/components/profile/TimerSoundToggle'
 import { isGuestUser } from '@/lib/auth/guest'
 import ThemePicker from '@/components/ui/ThemePicker'
 import BubblesMascot from '@/components/ui/BubblesMascot'
@@ -117,6 +118,14 @@ export default async function ProfilePage() {
             Expiring Food
           </p>
           <ExpiryPriorityControl profileId={profileId} initialValue={initialExpiryPriority} />
+        </section>
+
+        {/* Timers (#848) — sound is opt-in: no chime or notification unless this is on */}
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">
+            Timers
+          </p>
+          <TimerSoundToggle />
         </section>
 
         {/* Your kitchen — the first-run staples + household size step, reachable again (#853) */}

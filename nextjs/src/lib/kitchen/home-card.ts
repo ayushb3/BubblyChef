@@ -5,8 +5,8 @@
  * `pickHomeCard` takes a snapshot of everything it depends on and returns at most
  * one card; the first case that matches wins:
  *
- *   1. something in progress: a cook left mid-recipe, then scanned groceries not
- *      put away
+ *   1. something in progress: a cook left mid-recipe (never capped: it is the way
+ *      back to the cook, issue #848), then scanned groceries not put away
  *   2. tonight's planned meal (a saved meal set to Serve at today)
  *   2b. an empty pantry: the first-run prompt, Scan receipt (beats everything below)
  *   3. food that expires today or tomorrow (skipped when expiry priority is Off)
@@ -23,7 +23,7 @@
  *  - once a day: a nudge is counted per fingerprint per local day. A fingerprint
  *    already shown today is skipped, so a later visit that day falls through to
  *    the next case. (A nudge stays up for the visit it first appears on because
- *    the caller reads `seen` once, at the start of the visit.) Case 5 and the empty-pantry prompt are never capped.
+ *    the caller reads `seen` once, at the start of the visit.) Case 5, the empty-pantry prompt and a cook in progress are never capped.
  *  - Not now: a dismissed fingerprint stays away until it changes, a different
  *    item, step, scan or meal. It applies to every case, case 5 included.
  *
@@ -333,7 +333,11 @@ export function pickHomeCard(snapshot: HomeCardSnapshot): HomeCard | null {
     !dismissed.has(card.fingerprint) && !(capped && snapshot.seen[card.fingerprint] === today)
 
   const candidates: { build: () => HomeCard | null; capped: boolean }[] = [
-    { build: () => (snapshot.cook ? cookCard(snapshot.cook) : null), capped: true },
+    // Not capped to once a day (issue #848): a cook in progress is state, not a
+    // nudge, and this card is the way back to it from Home. It stays on every visit
+    // while the session is on record; Not now (or the cross) still sends it away
+    // until the step changes.
+    { build: () => (snapshot.cook ? cookCard(snapshot.cook) : null), capped: false },
     { build: () => (snapshot.pending ? scanCard(snapshot.pending) : null), capped: true },
     {
       build: () =>

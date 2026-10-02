@@ -1,0 +1,43 @@
+{
+  "expanded": {
+    "dockRight": 378,
+    "linkRight": 180,
+    "labelTruncated": true,
+    "labelTextOverflow": "ellipsis",
+    "btns": [
+      {
+        "n": "Collapse timers",
+        "right": 66,
+        "w": 44
+      },
+      {
+        "n": "Pause Slow-roast the whole spatchcocked chicken with lemon, thyme and garlic until golden timer",
+        "right": 232,
+        "w": 44
+      },
+      {
+        "n": "Add 2 minutes to Slow-roast the whole spatchcocked chicken with lemon, thyme and garlic until golden timer",
+        "right": 310,
+        "w": 70
+      },
+      {
+        "n": "Dismiss Slow-roast the whole spatchcocked chicken with lemon, thyme and garlic until golden timer",
+        "right": 362,
+        "w": 44
+      }
+    ]
+  },
+  "hasLink": 1,
+  "afterReloadBeforeTap": {
+    "ctx": 0,
+    "resumes": 0
+  },
+  "afterFirstTap": {
+    "ctx": 1,
+    "resumes": 0
+  },
+  "prefOffAfterTap": {
+    "ctx": 0,
+    "resumes": 0
+  }
+}

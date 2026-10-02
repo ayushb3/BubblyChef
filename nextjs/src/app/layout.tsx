@@ -81,7 +81,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-[var(--color-bg)]">
         <Providers>
-          <main className="pb-20"><PageTransition>{children}</PageTransition></main>
+          {/* pb-20 clears the fixed BottomNav; --timer-dock-h is the timer dock's own
+              height while it shows (0 otherwise, issue #848), so a timer never covers
+              content at the bottom of a page. */}
+          <main className="pb-[calc(5rem+var(--timer-dock-h,0px))]"><PageTransition>{children}</PageTransition></main>
           <BottomNav />
         </Providers>
       </body>

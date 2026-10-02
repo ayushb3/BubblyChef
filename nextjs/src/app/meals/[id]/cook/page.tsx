@@ -57,6 +57,7 @@ import {
 } from '@/lib/meal-cook-session'
 import { skippedDeductionNames, type SkippedDeductionNames } from '@/lib/cook-skipped'
 import { useCookingTimers } from '@/lib/useCookingTimers'
+import { useWakeLock } from '@/hooks/useWakeLock'
 import type { MealCookErrorKind, MealCookProposal, MealConstraints, MealDishFull } from '@/types/meals'
 import type { DeductionItem } from '@/types/recipes'
 
@@ -114,6 +115,8 @@ export default function MealCookPage() {
   })
 
   const { timers, start: startTimer, dismiss: dismissTimer } = useCookingTimers()
+  // Issue #848: the screen stays awake while you cook; released on leave.
+  useWakeLock()
 
   const [session, setSession] = useState<MealCookSession | null>(null)
   const [redirecting, setRedirecting] = useState(false)

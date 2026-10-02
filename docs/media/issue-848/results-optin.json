@@ -1,0 +1,24 @@
+{
+  "defaultOff": {
+    "oscStarts": 0,
+    "notifications": [],
+    "permissionAsks": 0,
+    "askStrip": 0
+  },
+  "toggleBefore": "false",
+  "toggleAfter": "true",
+  "stored": "on",
+  "permissionAsksOnEnable": 1,
+  "toggleAfterReload": "true",
+  "on": {
+    "oscStarts": 2,
+    "notifications": [
+      {
+        "title": "Eggs is done",
+        "body": "Your timer finished."
+      }
+    ]
+  },
+  "storedAfterOff": null,
+  "aiHitsBlocked": 8
+}
