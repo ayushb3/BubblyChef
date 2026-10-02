@@ -297,9 +297,9 @@ describe('MealNowCard', () => {
     expect(screen.getByTestId('meal-now-card-waiting-copy')).toBeInTheDocument()
   })
 
-  // ─── Ask Bubbles pill (issue #654 PR B) ────────────────────────────────────
+  // ─── Ask Bubbly pill (issue #654 PR B) ────────────────────────────────────
 
-  it('shows the Ask Bubbles pill on an active card when onAskBubbles is provided', () => {
+  it('shows the Ask Bubbly pill on an active card when onAskBubbles is provided', () => {
     const onAskBubbles = jest.fn()
     const card: NowCard = { kind: 'active', step: HANDS_ON_STEP }
     render(
@@ -319,7 +319,7 @@ describe('MealNowCard', () => {
     expect(onAskBubbles).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the Ask Bubbles pill on an upcoming card when onAskBubbles is provided', () => {
+  it('shows the Ask Bubbly pill on an upcoming card when onAskBubbles is provided', () => {
     const onAskBubbles = jest.fn()
     const card: NowCard = { kind: 'upcoming', step: HANDS_OFF_STEP, starts_in_minutes: 6 }
     render(
@@ -336,7 +336,7 @@ describe('MealNowCard', () => {
     expect(screen.getByTestId('meal-now-card-ask-bubbles')).toBeInTheDocument()
   })
 
-  it('omits the Ask Bubbles pill on a waiting card even when onAskBubbles is provided', () => {
+  it('omits the Ask Bubbly pill on a waiting card even when onAskBubbles is provided', () => {
     const card: NowCard = { kind: 'waiting', running: [HANDS_OFF_STEP] }
     render(
       <MealNowCard
@@ -352,7 +352,7 @@ describe('MealNowCard', () => {
     expect(screen.queryByTestId('meal-now-card-ask-bubbles')).not.toBeInTheDocument()
   })
 
-  it('omits the Ask Bubbles pill on active/upcoming cards when onAskBubbles is not provided', () => {
+  it('omits the Ask Bubbly pill on active/upcoming cards when onAskBubbles is not provided', () => {
     const activeCard: NowCard = { kind: 'active', step: HANDS_ON_STEP }
     const { rerender } = render(
       <MealNowCard

@@ -29,7 +29,7 @@ freshTest.describe('onboarding / TC1: first-run auto-open', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await skipStaples(page)
-    await expect(page.getByText("Hi! I'm Bubbles, your kitchen assistant.")).toBeVisible({
+    await expect(page.getByText("Hi! I'm Bubbly, your kitchen assistant.")).toBeVisible({
       timeout: 10_000,
     })
   })
@@ -57,7 +57,7 @@ freshTest.describe('onboarding / TC2: full step navigation', () => {
     // became "tap the fridge" when the Pantry tab went (#750), and the dead
     // quick-actions step was dropped (#748).
     const steps = [
-      "Hi! I'm Bubbles, your kitchen assistant.",
+      "Hi! I'm Bubbly, your kitchen assistant.",
       'Your food lives in the kitchen — tap the fridge to see what’s inside.',
       'Ask me anything about cooking, anytime.',
       'Browse and save recipes here.',
@@ -99,14 +99,14 @@ freshTest.describe('onboarding / TC3: skip persists flag and closes overlay', ()
     await page.waitForLoadState('networkidle')
     await skipStaples(page)
 
-    await expect(page.getByText("Hi! I'm Bubbles, your kitchen assistant.")).toBeVisible({
+    await expect(page.getByText("Hi! I'm Bubbly, your kitchen assistant.")).toBeVisible({
       timeout: 10_000,
     })
 
     await page.getByRole('button', { name: 'Skip', exact: true }).click()
 
     await expect(
-      page.getByText("Hi! I'm Bubbles, your kitchen assistant."),
+      page.getByText("Hi! I'm Bubbly, your kitchen assistant."),
     ).not.toBeVisible({ timeout: 5_000 })
 
     expect(updateUserCalled).toBe(true)
@@ -151,7 +151,7 @@ freshTest.describe('onboarding / TC4: completed flag suppresses auto-open', () =
 
       // The tour must NOT appear — step-1 copy should be absent.
       await expect(
-        page.getByText("Hi! I'm Bubbles, your kitchen assistant."),
+        page.getByText("Hi! I'm Bubbly, your kitchen assistant."),
       ).not.toBeVisible({ timeout: 5_000 })
     },
   )
@@ -194,7 +194,7 @@ authenticatedTest.describe('onboarding / TC5: profile re-open', () => {
       // Should navigate to / and open the tour (openTour() bypasses the flag check).
       await expect(page).toHaveURL('/', { timeout: 8_000 })
       await expect(
-        page.getByText("Hi! I'm Bubbles, your kitchen assistant."),
+        page.getByText("Hi! I'm Bubbly, your kitchen assistant."),
       ).toBeVisible({ timeout: 8_000 })
     },
   )

@@ -91,10 +91,10 @@ function AskBubblesKey({ onClick, disabled }: { onClick: () => void; disabled: b
       variant="secondary"
       onClick={onClick}
       disabled={disabled}
-      aria-label="Ask Bubbles about this dish"
+      aria-label="Ask Bubbly about this dish"
       data-testid="meal-now-card-ask-bubbles"
     >
-      💬 Ask Bubbles
+      💬 Ask Bubbly
     </SpringButton>
   )
 }

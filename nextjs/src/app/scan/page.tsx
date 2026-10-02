@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import PageHeader from '@/components/layout/PageHeader'
-import NotificationBell from '@/components/layout/NotificationBell'
+import BubblesHeader from '@/components/layout/BubblesHeader'
 import ScanDropzone, { ScanHandoffPanel, ScanProcessingPanel } from '@/components/scan/ScanDropzone'
 import ScanFailureNotice from '@/components/scan/ScanFailureNotice'
 import { useFileDropzone } from '@/hooks/useFileDropzone'
@@ -127,17 +126,23 @@ export default function ScanPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      <PageHeader eyebrow="Receipt" title="Scan a receipt">
-        <Link
-          href="/"
-          className="inline-flex min-h-[44px] items-center px-2 text-sm font-bold text-[var(--color-text)] underline underline-offset-2"
-        >
-          Cancel
-        </Link>
-        <NotificationBell />
-      </PageHeader>
+      <BubblesHeader
+        rightSlot={
+          <Link
+            href="/"
+            className="inline-flex min-h-[44px] items-center px-2 text-sm font-bold text-[var(--color-text)] underline underline-offset-2"
+          >
+            Cancel
+          </Link>
+        }
+      />
 
       <div className="px-6 pt-4">
+        {/* The page's own heading: the shared header above says BubblyChef (#894). */}
+        <h2 className="mb-3 text-2xl leading-[30px] font-bold text-[color:var(--color-text)]">
+          Scan a receipt
+        </h2>
+
         {error && (
           <ScanFailureNotice code={error} onRetry={() => inputRef.current?.click()} />
         )}

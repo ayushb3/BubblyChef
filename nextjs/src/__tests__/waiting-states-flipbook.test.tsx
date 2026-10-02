@@ -54,7 +54,7 @@ describe('thinking Bubbles is a two-frame flip-book (issue #887)', () => {
     expect(THINKING_FLIP_MS).toBeLessThanOrEqual(500)
 
     render(<BubblesMascot state="thinking" />)
-    const img = screen.getByAltText('Bubbles thinking')
+    const img = screen.getByAltText('Bubbly thinking')
     expect(isMirrored(img)).toBe(false)
 
     advance(THINKING_FLIP_MS - 10)
@@ -69,7 +69,7 @@ describe('thinking Bubbles is a two-frame flip-book (issue #887)', () => {
 
   it('is a hard cut: no CSS transition on the flip', () => {
     render(<BubblesMascot state="thinking" />)
-    const img = screen.getByAltText('Bubbles thinking')
+    const img = screen.getByAltText('Bubbly thinking')
     advance(THINKING_FLIP_MS)
     expect(isMirrored(img)).toBe(true)
     expect(img.style.transition).toBe('')
@@ -78,35 +78,35 @@ describe('thinking Bubbles is a two-frame flip-book (issue #887)', () => {
   it('stays on one still frame under prefers-reduced-motion', () => {
     mockReduced = true
     render(<BubblesMascot state="thinking" />)
-    const img = screen.getByAltText('Bubbles thinking')
+    const img = screen.getByAltText('Bubbly thinking')
     advance(THINKING_FLIP_MS * 6)
     expect(isMirrored(img)).toBe(false)
   })
 
   it('stays still when animate is off', () => {
     render(<BubblesMascot state="thinking" animate={false} />)
-    const img = screen.getByAltText('Bubbles thinking')
+    const img = screen.getByAltText('Bubbly thinking')
     advance(THINKING_FLIP_MS * 6)
     expect(isMirrored(img)).toBe(false)
   })
 
   it('only the thinking pose flips by default', () => {
     render(<BubblesMascot state="happy" />)
-    const img = screen.getByAltText('Bubbles happy')
+    const img = screen.getByAltText('Bubbly happy')
     advance(THINKING_FLIP_MS * 3)
     expect(isMirrored(img)).toBe(false)
   })
 
   it('any pose can take the flip with the flip prop, and thinking can be held still with flip={false}', () => {
     const { unmount } = render(<BubblesMascot state="happy" flip />)
-    const happy = screen.getByAltText('Bubbles happy')
+    const happy = screen.getByAltText('Bubbly happy')
     expect(isMirrored(happy)).toBe(false)
     advance(FLIP_MS)
     expect(isMirrored(happy)).toBe(true)
     unmount()
 
     render(<BubblesMascot state="thinking" flip={false} />)
-    const still = screen.getByAltText('Bubbles thinking')
+    const still = screen.getByAltText('Bubbly thinking')
     advance(FLIP_MS * 4)
     expect(isMirrored(still)).toBe(false)
   })
@@ -114,7 +114,7 @@ describe('thinking Bubbles is a two-frame flip-book (issue #887)', () => {
   it('the flip prop is still under reduced motion', () => {
     mockReduced = true
     render(<BubblesMascot state="happy" flip />)
-    const img = screen.getByAltText('Bubbles happy')
+    const img = screen.getByAltText('Bubbly happy')
     advance(FLIP_MS * 4)
     expect(isMirrored(img)).toBe(false)
   })
@@ -125,13 +125,13 @@ describe('thinking Bubbles is a two-frame flip-book (issue #887)', () => {
     expect(jest.getTimerCount()).toBe(0)
   })
 
-  it('the chat typing indicator flips its Bubbles and still announces "Bubbles is typing"', () => {
+  it('the chat typing indicator flips its Bubbles and still announces "Bubbly is typing"', () => {
     render(<TypingIndicator />)
-    const img = screen.getByAltText('Bubbles thinking')
+    const img = screen.getByAltText('Bubbly thinking')
     expect(isMirrored(img)).toBe(false)
     advance(THINKING_FLIP_MS)
     expect(isMirrored(img)).toBe(true)
-    expect(screen.getByRole('status')).toHaveTextContent('Bubbles is typing')
+    expect(screen.getByRole('status')).toHaveTextContent('Bubbly is typing')
   })
 })
 
@@ -144,7 +144,7 @@ describe('MealOpenWaitingCard (issue #887)', () => {
     expect(screen.getByText('Lemon butter chicken')).toBeInTheDocument()
     expect(screen.getByText('Buttered orzo')).toBeInTheDocument()
 
-    const img = screen.getByAltText('Bubbles thinking')
+    const img = screen.getByAltText('Bubbly thinking')
     expect(isMirrored(img)).toBe(false)
     advance(THINKING_FLIP_MS)
     expect(isMirrored(img)).toBe(true)
@@ -187,7 +187,7 @@ describe('MealOpenWaitingCard (issue #887)', () => {
     const first = line.textContent
     advance(MEAL_OPEN_STATUS_MS * 3)
     expect(line.textContent).toBe(first)
-    expect(isMirrored(screen.getByAltText('Bubbles thinking'))).toBe(false)
+    expect(isMirrored(screen.getByAltText('Bubbly thinking'))).toBe(false)
   })
 
   it('copes with an option that has no dishes and a very long title', () => {
@@ -202,7 +202,7 @@ describe('the compact meal card while it opens (issue #887)', () => {
     render(<CompactVariant title="Lemon chicken dinner" dishes={['Lemon chicken']} onOpen={() => {}} openState="pending" />)
     const button = screen.getByRole('button', { name: 'Opening…' })
     expect(button).toBeDisabled()
-    const img = within(button).getByAltText('Bubbles thinking')
+    const img = within(button).getByAltText('Bubbly thinking')
     expect(isMirrored(img)).toBe(false)
     advance(THINKING_FLIP_MS)
     expect(isMirrored(img)).toBe(true)

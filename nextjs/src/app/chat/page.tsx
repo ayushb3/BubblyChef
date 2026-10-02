@@ -394,7 +394,7 @@ function ChatSurface() {
   }
 
   // Auto-send the seeded question so a tap on the dashboard tip / an expiring
-  // item lands straight on Bubbles' answer — the tap on the card is the "1 tap"
+  // item lands straight on Bubbly's answer — the tap on the card is the "1 tap"
   // both #138 acceptance criteria budget for. The seed rides in the message
   // *text*, not a context payload: the AI service only honours `cooking_recipe`
   // as client context, and the must-use ingredient is recovered by an LLM pass
@@ -500,9 +500,6 @@ function ChatSurface() {
     startNewChat()
   }
 
-
-  // Mascot state
-  const mascotState = isStreaming ? 'thinking' : 'happy'
 
   const handleSend = () => {
     const text = input.trim()
@@ -870,8 +867,7 @@ function ChatSurface() {
     <div className={`flex flex-col ${CHAT_VIEWPORT_CLASS}`}>
       {/* Header */}
       <BubblesHeader
-        mascotState={mascotState}
-        mascotAnimate={isStreaming}
+        thinking={isStreaming}
         rightSlot={
           <div className="flex items-center gap-2">
             {hasMessages && (
@@ -893,14 +889,14 @@ function ChatSurface() {
         <div className="mx-4 mt-3 px-4 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex items-center gap-2 text-sm">
           <span>💤</span>
           <span className="text-[var(--color-text)]">
-            Bubbles is taking a break — chat will be back soon. Your pantry and recipes still work.
+            Bubbly is taking a break — chat will be back soon. Your pantry and recipes still work.
           </span>
         </div>
       )}
 
       {/* Cook handoff context — pinned above the thread rather than scrolling
           with it. While a recipe is pinned, cooking *is* the task of this
-          screen, and the banner is the only on-screen confirmation that Bubbles
+          screen, and the banner is the only on-screen confirmation that Bubbly
           knows which recipe you mean; inside the scroll area it disappeared
           after a couple of turns (#242). */}
       <AnimatePresence>
@@ -1081,9 +1077,9 @@ function ChatSurface() {
           >
             <EmptyState
               mascotState="happy"
-              headerLabel="Chef Bubbly"
+              headerLabel="Bubbly"
               headerVariant="chat"
-              headline={cookingRecipe ? 'Cooking with Bubbles' : 'Chat with Bubbles'}
+              headline={cookingRecipe ? 'Cooking with Bubbly' : 'Chat with Bubbly'}
               subline={
                 cookingRecipe
                   ? 'Ask me anything about this recipe!'
@@ -1148,7 +1144,7 @@ function ChatSurface() {
             // sendMessage returns early when isStreaming (useChat), and the Send
             // button is replaced by Stop below — so typing cannot interleave two
             // requests.
-            aria-label="Message Bubbles"
+            aria-label="Message Bubbly"
             className="w-full rounded-full px-4 py-2.5 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:border-[var(--color-accent)] text-sm"
           />
           {/* Placeholder hides once anything is typed; no longer tied to streaming,

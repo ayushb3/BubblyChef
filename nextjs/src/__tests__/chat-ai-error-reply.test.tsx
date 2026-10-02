@@ -168,7 +168,7 @@ describe('the unavailable banner', () => {
 
     expect(
       await screen.findByText(
-        'Bubbles is taking a break — chat will be back soon. Your pantry and recipes still work.',
+        'Bubbly is taking a break — chat will be back soon. Your pantry and recipes still work.',
       ),
     ).toBeInTheDocument()
     expect(screen.queryByText(/Gemini|Ollama|API key/i)).not.toBeInTheDocument()

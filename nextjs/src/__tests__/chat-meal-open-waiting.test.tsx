@@ -170,9 +170,9 @@ describe('meal open waiting card in chat (issue #887)', () => {
     expect(within(card).getByText('Sheet pan salmon night')).toBeInTheDocument()
     expect(within(card).getByText('Sheet pan salmon')).toBeInTheDocument()
     expect(within(card).getByText('Roasted broccoli')).toBeInTheDocument()
-    expect(within(card).getByAltText('Bubbles thinking')).toBeInTheDocument()
+    expect(within(card).getByAltText('Bubbly thinking')).toBeInTheDocument()
     // It replaces the typing dots rather than stacking on them, and never says "Opening…" alone.
-    expect(screen.queryByText('Bubbles is typing')).not.toBeInTheDocument()
+    expect(screen.queryByText('Bubbly is typing')).not.toBeInTheDocument()
     expect(screen.queryByText('Opening…')).not.toBeInTheDocument()
   })
 
@@ -226,14 +226,14 @@ describe('meal open waiting card in chat (issue #887)', () => {
     rerender(ui())
 
     expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
-    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+    expect(await screen.findByText('Bubbly is typing')).toBeInTheDocument()
   })
 
   it('a plain message with no pick shows the usual typing dots', async () => {
     mockMessages = [userMsg('hi'), emptyAssistant]
     mockStreaming = true
     render(ui(), { wrapper: QueryWrapper })
-    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+    expect(await screen.findByText('Bubbly is typing')).toBeInTheDocument()
     expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
   })
 
@@ -274,7 +274,7 @@ describe('meal open waiting card in chat (issue #887)', () => {
     rerender(ui())
 
     expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
-    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+    expect(await screen.findByText('Bubbly is typing')).toBeInTheDocument()
   })
 
   it('New Chat clears the pick', async () => {
@@ -292,7 +292,7 @@ describe('meal open waiting card in chat (issue #887)', () => {
     mockStreaming = true
     rerender(ui())
     expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
-    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+    expect(await screen.findByText('Bubbly is typing')).toBeInTheDocument()
   })
 
   it('only the turn right after the tapped message is the pick: a different message there gets the dots', async () => {
@@ -303,6 +303,6 @@ describe('meal open waiting card in chat (issue #887)', () => {
     mockStreaming = true
     rerender(ui())
     expect(screen.queryByTestId('meal-open-waiting')).not.toBeInTheDocument()
-    expect(await screen.findByText('Bubbles is typing')).toBeInTheDocument()
+    expect(await screen.findByText('Bubbly is typing')).toBeInTheDocument()
   })
 })

@@ -20,6 +20,14 @@ interface BubblesMascotProps {
    * reduced motion or `animate={false}`.
    */
   flip?: boolean
+  /** The flip's beat in ms (default `FLIP_MS`). A tap reaction wants a quicker one. */
+  flipMs?: number
+  /**
+   * Whether `celebrate` plays its one-shot scale bounce and sparkle burst (default
+   * true). Pass `false` to use the celebrate art as a resting pose that only
+   * bobs (the page header, issue #894), so it does not go off on every mount.
+   */
+  burst?: boolean
 }
 
 // Exported (not just module-private) so tests can walk every entry and
@@ -59,6 +67,8 @@ export default function BubblesMascot({
   className,
   animate = true,
   flip,
+  flipMs = FLIP_MS,
+  burst = true,
 }: BubblesMascotProps) {
   // Gates all new motion (bounce, sparkle burst) on top of the existing
   // `animate` prop gate — `prefers-reduced-motion: reduce` still swaps the
@@ -68,7 +78,7 @@ export default function BubblesMascot({
   // `useSteppedFrame` already holds frame 0 under reduced motion; `flips &&
   // animate` keeps every still use off the timer.
   const flips = flip ?? state === 'thinking'
-  const flipFrame = useSteppedFrame(2, FLIP_MS, flips && animate)
+  const flipFrame = useSteppedFrame(2, flipMs, flips && animate)
   const mirrored = flips && flipFrame === 1
 
   // Re-mounting BubblesMascot with `state="celebrate"` already replays the
@@ -90,12 +100,15 @@ export default function BubblesMascot({
   // reduce` also stops the idle float — otherwise every state that falls
   // through to this branch (celebrate/worried/happy/surprised with reduced
   // motion) would still bounce forever.
-  const floatAnimation = motionEnabled ? { y: [0, -6, 0] } : {}
+  // The bob scales down for a small mascot (a 36 px header mascot would lurch
+  // 6 px); at 75 px and up it is the original 6 px.
+  const floatPx = Math.min(6, Math.round(size * 0.08))
+  const floatAnimation = motionEnabled ? { y: [0, -floatPx, 0] } : {}
   const floatTransition = motionEnabled
     ? { duration: 3, repeat: Infinity, ease: 'easeInOut' as const }
     : {}
 
-  const isCelebrating = state === 'celebrate'
+  const isCelebrating = state === 'celebrate' && burst
 
   // Thinking has no float or wobble: the flip-book is its one visible motion
   // (issue #887), so the pose reads as stepped frames, not a drifting still.
@@ -126,7 +139,7 @@ export default function BubblesMascot({
       >
         <Image
           src={STATE_SRC[state]}
-          alt={`Bubbles ${state}`}
+          alt={`Bubbly ${state}`}
           width={size}
           height={size}
           data-flip-frame={flips ? (mirrored ? 'mirrored' : 'original') : undefined}

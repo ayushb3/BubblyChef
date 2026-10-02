@@ -108,7 +108,7 @@ describe('bare /chat — no context bleed', () => {
   it('sends nothing and shows no context card', async () => {
     renderChat()
 
-    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chat with Bubbly')).toBeInTheDocument())
     expect(sendMessage).not.toHaveBeenCalled()
     expect(screen.queryByText(/Today's tip/i)).toBeNull()
     expect(screen.queryByText(/Using your/i)).toBeNull()
@@ -118,7 +118,7 @@ describe('bare /chat — no context bleed', () => {
     withParams('mode=recipe')
     renderChat()
 
-    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chat with Bubbly')).toBeInTheDocument())
     expect(sendMessage).not.toHaveBeenCalled()
   })
 })
@@ -281,7 +281,7 @@ describe('a consumed seed is stripped from the URL (#854)', () => {
     // A refresh: a fresh mount at the stripped URL.
     first.unmount()
     renderChat()
-    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chat with Bubbly')).toBeInTheDocument())
     expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 
@@ -324,7 +324,7 @@ describe('/chat?new=1 — Home input, submitted empty (#854)', () => {
     withParams('new=1')
     renderChat()
 
-    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chat with Bubbly')).toBeInTheDocument())
     expect(sendMessage).not.toHaveBeenCalled()
     expect(useChatOptions).toHaveBeenCalledWith(expect.objectContaining({ skipResume: true }))
     // The starter chips are the empty state's affordance.
@@ -333,7 +333,7 @@ describe('/chat?new=1 — Home input, submitted empty (#854)', () => {
 
   it('a bare /chat still resumes', async () => {
     renderChat()
-    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chat with Bubbly')).toBeInTheDocument())
     expect(useChatOptions).toHaveBeenCalledWith(expect.objectContaining({ skipResume: false }))
   })
 })
@@ -367,7 +367,7 @@ describe('/chat?meal= — recipe page make-it-a-meal handoff (#651 PR B)', () =>
     withParams('meal=nope')
     renderChat()
 
-    await waitFor(() => expect(screen.getByText('Chat with Bubbles')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chat with Bubbly')).toBeInTheDocument())
     expect(sendMessage).not.toHaveBeenCalled()
   })
 

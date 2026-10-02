@@ -81,7 +81,7 @@ export function sceneLabel(spot: BubblesSpot, cooking: boolean): string {
         : cooking
           ? 'at the stove, cooking'
           : 'at the stove'
-  return `Your kitchen: a fridge with a freezer drawer, shelves, a basket, the stove and the door. Bubbles is ${where}.`
+  return `Your kitchen: a fridge with a freezer drawer, shelves, a basket, the stove and the door. Bubbly is ${where}.`
 }
 
 /** Where each spot stands: the sprite's left edge, in wall units. The board's own offsets. */

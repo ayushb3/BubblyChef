@@ -1,7 +1,7 @@
 /**
  * Issue #849 — the cook-along's step card shows the scaled amounts of the
  * ingredients a step uses, an Ingredients sheet lists every dish's scaled
- * ingredients (checkable), the step text is at least 20px, and Ask Bubbles
+ * ingredients (checkable), the step text is at least 20px, and Ask Bubbly
  * reports the step the cook is on (not the next scheduled one) and offers
  * one-tap prompts that send immediately.
  *
@@ -30,7 +30,7 @@ import { TIMER_COMPLETED_EVENT, type CookingTimer } from '@/lib/useCookingTimers
 // MealCookError` in the page needs the real constructor.
 import { MealCookError } from '@/lib/api/meals'
 
-// Issue #654 PR B — the Ask Bubbles overlay (rendered for real, mounted by
+// Issue #654 PR B — the Ask Bubbly overlay (rendered for real, mounted by
 // the page) calls `streamChatMessage`; mocked exactly as
 // `ask-bubbles-overlay.test.tsx` mocks it for the component in isolation.
 jest.mock('@/lib/api/chat', () => ({ streamChatMessage: jest.fn() }))
@@ -285,7 +285,7 @@ describe('MealCookPage — Ingredients sheet (issue #849)', () => {
   })
 })
 
-describe('MealCookPage — Ask Bubbles step and quick prompts (issue #849)', () => {
+describe('MealCookPage — Ask Bubbly step and quick prompts (issue #849)', () => {
   // Boil pasta done, Simmer sauce running (timer ticking), so the Now card is
   // the upcoming "Plate up" (step 3), waiting on the simmer (step 2).
   function seedSimmerRunning() {
@@ -298,7 +298,7 @@ describe('MealCookPage — Ask Bubbles step and quick prompts (issue #849)', () 
     ]
   }
 
-  it('with the simmer running, Ask Bubbles reports the simmer (step 2), not the next card (step 3)', async () => {
+  it('with the simmer running, Ask Bubbly reports the simmer (step 2), not the next card (step 3)', async () => {
     seedSimmerRunning()
     renderPage()
     await waitFor(() => expect(screen.getByText('Plate up')).toBeInTheDocument())
@@ -306,7 +306,7 @@ describe('MealCookPage — Ask Bubbles step and quick prompts (issue #849)', () 
     act(() => {
       screen.getByTestId('meal-now-card-ask-bubbles').click()
     })
-    expect(screen.getByRole('dialog', { name: 'Ask Bubbles about step 2' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Ask Bubbly about step 2' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Back to step 2' })).toBeInTheDocument()
 
     streamChatMessageMock.mockImplementationOnce(async () => {})
