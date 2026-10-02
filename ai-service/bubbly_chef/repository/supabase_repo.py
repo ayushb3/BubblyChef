@@ -33,6 +33,7 @@ from bubbly_chef.models.session import (
     SessionContext,
     SessionMode,
 )
+from bubbly_chef.services.concurrent_reads import gather_reads
 from bubbly_chef.tools.expiry import get_expiry_heuristics
 
 logger = logging.getLogger(__name__)
@@ -1980,18 +1981,21 @@ class SupabaseRepository:
             .order("position")
             .execute()
         )
-        dishes: list[dict[str, Any]] = []
-        for raw in _as_rows(dishes_result.data or []):
-            recipe_id = str(raw["recipe_id"])
-            recipe_row = await self.get_recipe(user_id, recipe_id)
-            dishes.append(
-                {
-                    "role": raw["role"],
-                    "position": raw["position"],
-                    "recipe_id": recipe_id,
-                    "recipe": recipe_row or {},
-                }
-            )
+        dish_rows = _as_rows(dishes_result.data or [])
+        # The recipes are independent reads, so they go out together (issue #888):
+        # three dishes used to cost three round trips in a row. Order is kept.
+        recipe_rows = await gather_reads(
+            [self.get_recipe(user_id, str(raw["recipe_id"])) for raw in dish_rows]
+        )
+        dishes: list[dict[str, Any]] = [
+            {
+                "role": raw["role"],
+                "position": raw["position"],
+                "recipe_id": str(raw["recipe_id"]),
+                "recipe": recipe_row or {},
+            }
+            for raw, recipe_row in zip(dish_rows, recipe_rows, strict=True)
+        ]
 
         return {"meal": meal_row, "dishes": dishes}
 
