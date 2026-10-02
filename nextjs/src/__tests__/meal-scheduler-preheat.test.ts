@@ -169,4 +169,133 @@ describe('preheat does not block prep (issue #891)', () => {
     }
     expect(sanitizedDependencyKeys([dish], 'soup', 1)).toEqual(['soup:0'])
   })
+
+  it('roast text that says "preheated oven" still waits for the preheat while seasoning runs during it', () => {
+    const dish = carrotDish({ roastText: 'Roast the carrots in the preheated oven for 25 minutes.' })
+    const tl = scheduleMeal({ dishes: [dish] })
+    const at = (i: number) => tl.placements.find((x) => x.step_index === i)!
+    expect(at(1).start).toBeLessThan(at(0).end)
+    expect(at(2).start).toBeGreaterThanOrEqual(at(0).end)
+    expect(tl.total_minutes).toBe(30)
+  })
+})
+
+describe('only a step that IS a preheat is treated as one (issue #891 review)', () => {
+  const dishOf = (steps: Step[]): SchedulerDish => ({ dish_id: 'd', column: 'main', title: 'Dish', steps })
+  const prep = (text: string, label: string, deps: number[], handsOn = true, minutes = 4) =>
+    step({ text, label, duration_minutes: minutes, hands_on: handsOn, depends_on: deps })
+
+  it('"Bake in the preheated oven" is an oven step: it waits for the preheat and the mixing', () => {
+    const dish = dishOf([
+      prep('Preheat the oven to 180C.', 'Preheat the oven', [], false, 10),
+      prep('Mix the batter.', 'Mix the batter', [0]),
+      prep('Bake in the preheated oven for 30 minutes.', 'Bake the cake', [1], false, 30),
+    ])
+    const tl = scheduleMeal({ dishes: [dish] })
+    const at = (i: number) => tl.placements.find((x) => x.step_index === i)!
+    expect(at(1).start).toBeLessThan(at(0).end) // mixing runs during the preheat
+    expect(at(2).start).toBeGreaterThanOrEqual(at(0).end)
+    expect(at(2).start).toBeGreaterThanOrEqual(at(1).end)
+  })
+
+  it('a step that only mentions a preheated oven keeps its dependencies and its hands_on', () => {
+    const dish = dishOf([
+      prep('Mix the batter.', 'Mix the batter', []),
+      prep('Bake in the preheated oven for 30 minutes.', 'Bake the cake', [0], true, 30),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual(['d:0'])
+    const tl = scheduleMeal({ dishes: [dish] })
+    expect(tl.placements.find((x) => x.step_index === 1)!.hands_on).toBe(true)
+    expect(tl.placements.find((x) => x.step_index === 1)!.start).toBeGreaterThanOrEqual(
+      tl.placements.find((x) => x.step_index === 0)!.end,
+    )
+  })
+
+  it('"Roast the carrots in the preheated oven" does not start before the oven is hot', () => {
+    const dish = dishOf([
+      prep('Peel the carrots.', 'Peel the carrots', []),
+      prep('Roast the carrots in the preheated oven for 25 minutes.', 'Roast the carrots', [0], false, 25),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual(['d:0'])
+  })
+
+  it('"While the oven preheats, chop the carrots" is prep, not a preheat: stays hands-on, not held behind the oven', () => {
+    const dish = dishOf([
+      prep('Preheat the oven to 220C.', 'Preheat the oven', [], false, 10),
+      prep('While the oven preheats, chop the carrots.', 'Chop the carrots', [0]),
+      prep('Roast the carrots.', 'Roast the carrots', [1], false, 20),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual([])
+    const tl = scheduleMeal({ dishes: [dish] })
+    const chop = tl.placements.find((x) => x.step_index === 1)!
+    expect(chop.hands_on).toBe(true)
+    expect(chop.start).toBeLessThan(tl.placements.find((x) => x.step_index === 0)!.end)
+  })
+
+  it('a lone "While the oven preheats..." step is not forced hands-off and keeps its dependencies', () => {
+    const dish = dishOf([
+      prep('Peel the carrots.', 'Peel the carrots', []),
+      prep('While the oven preheats, chop the carrots.', 'Chop the carrots', [0]),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual(['d:0'])
+    const tl = scheduleMeal({ dishes: [dish] })
+    expect(tl.placements.find((x) => x.step_index === 1)!.hands_on).toBe(true)
+  })
+
+  it('"The oven preheats for 10 minutes" (a mention, not a command) is not a preheat', () => {
+    const dish = dishOf([
+      prep('Peel the carrots.', 'Peel the carrots', []),
+      prep('The oven preheats for 10 minutes; chop the carrots meanwhile.', 'Chop the carrots', [0]),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual(['d:0'])
+  })
+
+  it('"Heat the oil" and "Heat a grill pan" are not appliance preheats', () => {
+    const dish = dishOf([
+      prep('Heat the oil in a pan.', 'Heat the oil', []),
+      prep('Heat a grill pan over high heat.', 'Heat the grill pan', [0]),
+      prep('Fry the onions.', 'Fry the onions', [1]),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual(['d:0'])
+    expect(sanitizedDependencyKeys([dish], 'd', 2)).toEqual(['d:1'])
+  })
+
+  it('recognises the imperative in the title or the text, in the usual wordings', () => {
+    for (const [label, text] of [
+      ['Preheat the oven', 'Set it to 220C.'],
+      ['Get the oven hot', 'Preheat your oven to 220C.'],
+      ['Heat the oven', 'Heat the oven to 200C.'],
+      ['Preheat the air fryer', 'Preheat the air fryer to 190C.'],
+    ]) {
+      const dish = dishOf([prep(text, label, [], false, 5), prep('Season the veg.', 'Season the veg', [0])])
+      expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual([])
+    }
+  })
+
+  it('two preheats: every dependency is computed from the original ones, none leaks from the first pass', () => {
+    const dish = dishOf([
+      prep('Preheat the oven to 220C.', 'Preheat the oven', [], false, 8),
+      prep('Preheat the broiler. Keep the oven door shut.', 'Preheat the broiler', [0], false, 8),
+      prep('Season the carrots.', 'Season the carrots', [1]),
+      prep('Roast the carrots.', 'Roast the carrots', [2], false, 20),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 0)).toEqual([])
+    expect(sanitizedDependencyKeys([dish], 'd', 1)).toEqual([])
+    expect(sanitizedDependencyKeys([dish], 'd', 2)).toEqual([])
+    expect(sanitizedDependencyKeys([dish], 'd', 3)).toEqual(['d:0', 'd:2'])
+    const tl = scheduleMeal({ dishes: [dish] })
+    const at = (i: number) => tl.placements.find((x) => x.step_index === i)!
+    expect(at(2).start).toBeLessThan(at(0).end)
+    expect(at(3).start).toBeGreaterThanOrEqual(at(0).end)
+  })
+
+  it('two preheats around a chop: the chop still comes first for the seasoning', () => {
+    const dish = dishOf([
+      prep('Chop the carrots.', 'Chop the carrots', []),
+      prep('Preheat the oven to 220C.', 'Preheat the oven', [0], false, 8),
+      prep('Preheat the grill to high.', 'Preheat the grill', [1], false, 8),
+      prep('Season the carrots.', 'Season the carrots', [2]),
+    ])
+    expect(sanitizedDependencyKeys([dish], 'd', 3)).toEqual(['d:0'])
+  })
 })

@@ -263,34 +263,50 @@ function sanitizeDependsOn(steps: Pick<Step, 'depends_on' | 'text' | 'label'>[])
 // ---------------------------------------------------------------------------
 
 /**
- * A preheat step names an appliance, and the later steps that need that
- * appliance are recognised by cooking verbs. The model tends to chain every
- * step to the one before it ("season" after "preheat"), which turns a
- * hands-off wait into idle minutes; this recovers the real shape.
- * Deliberately limited to heated appliances, where a missed user is cheap
- * (the step simply stays behind the preheat, as before) — "boil water" and
- * "marinate" have no reliable text signal for who uses them, so those rest on
- * the prompt's guidance alone.
+ * A preheat step is recognised by its imperative ("Preheat the oven to 220C",
+ * "Heat the grill") at the start of its title or text, with the appliance
+ * right after the verb. Anything that merely mentions one ("Bake in the
+ * preheated oven", "While the oven preheats, chop...", "The oven preheats for
+ * 10 minutes") is NOT a preheat: it is an oven-use step or plain prep, and
+ * must neither lose its dependencies nor be forced hands-off.
+ *
+ * Later steps that need the appliance are recognised by cooking verbs. The
+ * model tends to chain every step to the one before it ("season" after
+ * "preheat"), which turns a hands-off wait into idle minutes; this recovers
+ * the real shape. Deliberately limited to heated appliances, where a missed
+ * user is cheap (the step simply stays behind the preheat, as before) —
+ * "boil water" and "marinate" have no reliable text signal for who uses
+ * them, so those rest on the prompt's guidance alone. The user patterns are
+ * allowed to over-match inflected or incidental mentions ("roasted", "grilled"):
+ * that only keeps a step behind the preheat, the safe direction.
  */
-const PREHEAT_RE = /\bpre-?heat\w*\b|\bheat (?:up )?the (?:oven|grill|broiler)\b/i
+const PREHEAT_LEAD_RE =
+  /^\W*(?:pre-?heat|heat(?:\s+up)?)\s+(?:(?:the|your|an?|my)\s+)?(?:\w+\s+)?(oven|broiler|griddle|grill(?!\s+pan)|air[- ]?fryer)\b/i
 const APPLIANCES: { named: RegExp; users: RegExp }[] = [
-  { named: /\boven\b/i, users: /\b(?:oven|bake[sd]?|roast\w*|broil\w*)\b/i },
-  { named: /\bbroiler\b/i, users: /\b(?:oven|broil\w*)\b/i },
-  { named: /\b(?:grill|griddle)\b/i, users: /\b(?:grill\w*|griddle|sear\w*)\b/i },
-  { named: /\bair[- ]?fryer\b/i, users: /\b(?:air[- ]?fr\w*|fryer|basket)\b/i },
+  { named: /^oven$/i, users: /\b(?:oven|bake[sd]?|roast\w*|broil\w*)\b/i },
+  { named: /^broiler$/i, users: /\b(?:oven|broil\w*)\b/i },
+  { named: /^(?:grill|griddle)$/i, users: /\b(?:grill\w*|griddle|sear\w*)\b/i },
+  { named: /^air-?fryer$/i, users: /\b(?:air[- ]?fr\w*|fryer|basket)\b/i },
 ]
 /** "baking sheet" / "roasting tray" are prep equipment, not the oven being used. */
 const EQUIPMENT_RE = /\b(?:baking|roasting|grill)\s+(?:sheet|tray|pan|dish|rack|paper|soda|powder|mat)s?\b/gi
+/** "While the oven preheats, ..." names the wait; it doesn't use the oven. */
+const WAIT_CLAUSE_RE =
+  /\b(?:while|as|until|when|once)\s+(?:the|your)\s+(?:\w+\s+)?(?:oven|broiler|grill|air[- ]?fryer)\s+(?:is\s+)?(?:pre-?heat\w*|heat\w*|warm\w*)\b/gi
 
 function stepText(step: Pick<Step, 'text' | 'label'>): string {
   return `${step.label ?? ''}. ${step.text ?? ''}`
 }
 
+/** The appliance's user patterns when `step` IS a preheat; null otherwise. */
 function preheatUsers(step: Pick<Step, 'text' | 'label'>): RegExp[] | null {
-  const text = stepText(step)
-  if (!PREHEAT_RE.test(text)) return null
-  const users = APPLIANCES.filter((a) => a.named.test(text)).map((a) => a.users)
-  return users.length > 0 ? users : null
+  for (const field of [step.label, step.text]) {
+    const match = PREHEAT_LEAD_RE.exec(field ?? '')
+    if (!match) continue
+    const appliance = match[1].replace(/\s+/g, '')
+    return APPLIANCES.filter((a) => a.named.test(appliance)).map((a) => a.users)
+  }
+  return null
 }
 
 /**
@@ -302,33 +318,41 @@ function preheatUsers(step: Pick<Step, 'text' | 'label'>): RegExp[] | null {
  *    it really followed (a chop before the preheat) but not on the heat;
  *  - a later step that does use the appliance always depends on P — directly,
  *    since the step that used to carry P to it may no longer reach P.
- * Every dependency still points to a strictly-earlier step, so no cycle can
- * form. Returns the preheat step indices.
+ * Every step is rewritten from the ORIGINAL dependencies, never from another
+ * preheat's already-rewritten ones, so two preheats can't leak into each
+ * other or into the steps after them. Every dependency still points to a
+ * strictly-earlier step, so no cycle can form. Returns the preheat indices.
  */
 function relaxPreheatDependencies(
   steps: Pick<Step, 'text' | 'label'>[],
   depsByIndex: number[][],
 ): Set<number> {
-  const waits = new Set<number>()
-  steps.forEach((step, p) => {
+  const original = depsByIndex.map((d) => [...d])
+  const usersByPreheat = new Map<number, RegExp[]>()
+  steps.forEach((step, i) => {
     const users = preheatUsers(step)
-    if (!users) return
-    waits.add(p)
-    const formerDeps = depsByIndex[p]
-    depsByIndex[p] = []
-    for (let i = p + 1; i < steps.length; i++) {
-      const text = stepText(steps[i]).replace(EQUIPMENT_RE, '')
-      const needsHeat = users.some((re) => re.test(text))
-      const deps = new Set(depsByIndex[i])
-      if (needsHeat) {
-        deps.add(p)
-      } else if (deps.delete(p)) {
-        formerDeps.forEach((d) => deps.add(d))
-      }
-      depsByIndex[i] = Array.from(deps).sort((a, b) => a - b)
-    }
+    if (users) usersByPreheat.set(i, users)
   })
-  return waits
+  if (usersByPreheat.size === 0) return new Set()
+
+  // What a dependency on `d` really means once preheats are dropped: `d`
+  // itself, or (for a preheat) whatever that preheat itself followed.
+  const resolve = (d: number): number[] => (usersByPreheat.has(d) ? original[d].flatMap(resolve) : [d])
+
+  steps.forEach((step, i) => {
+    if (usersByPreheat.has(i)) {
+      depsByIndex[i] = []
+      return
+    }
+    const text = stepText(step).replace(EQUIPMENT_RE, '').replace(WAIT_CLAUSE_RE, '')
+    const deps = new Set<number>()
+    for (const d of original[i]) resolve(d).forEach((r) => deps.add(r))
+    for (const [p, users] of usersByPreheat) {
+      if (p < i && users.some((re) => re.test(text))) deps.add(p)
+    }
+    depsByIndex[i] = Array.from(deps).sort((a, b) => a - b)
+  })
+  return new Set(usersByPreheat.keys())
 }
 
 /** See `sanitizeDependsOn`'s doc comment. */
