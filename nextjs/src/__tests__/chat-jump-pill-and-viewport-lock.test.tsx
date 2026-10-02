@@ -65,6 +65,45 @@ describe('useChatViewportLock', () => {
     expect(scrollTo).not.toHaveBeenCalled()
   })
 
+  it('does not snap while a text field is focused (the keyboard scrolls the page to show it)', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    renderHook(() => useChatViewportLock())
+    ;(window as { scrollY: number }).scrollY = 120
+    fireEvent.scroll(window)
+    expect(scrollTo).not.toHaveBeenCalled()
+    input.remove()
+  })
+
+  it('does not snap while the on-screen keyboard is up (visual viewport much shorter)', () => {
+    const original = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    Object.defineProperty(window, 'visualViewport', {
+      value: { height: window.innerHeight - 300 },
+      configurable: true,
+    })
+    renderHook(() => useChatViewportLock())
+    ;(window as { scrollY: number }).scrollY = 120
+    fireEvent.scroll(window)
+    expect(scrollTo).not.toHaveBeenCalled()
+    if (original) Object.defineProperty(window, 'visualViewport', original)
+    else delete (window as { visualViewport?: unknown }).visualViewport
+  })
+
+  it('puts the page back once the field loses focus', () => {
+    jest.useFakeTimers()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    renderHook(() => useChatViewportLock())
+    ;(window as { scrollY: number }).scrollY = 120
+    input.blur()
+    jest.runAllTimers()
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'instant' })
+    input.remove()
+    jest.useRealTimers()
+  })
+
   it('stops watching once unmounted', () => {
     const { unmount } = renderHook(() => useChatViewportLock())
     unmount()
