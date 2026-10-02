@@ -100,34 +100,72 @@ describe('MealNowCard', () => {
     expect(onDone).toHaveBeenCalledTimes(1)
   })
 
-  it('with waiting_on: shows the timing and the "after" line, but no Start now (issue #663); Skip still fires', () => {
-    const onStartEarly = jest.fn()
-    const onSkip = jest.fn()
-    const card: NowCard = {
+  describe('with waiting_on (issue #890: never a hard lock)', () => {
+    const waitingCard: NowCard = {
       kind: 'upcoming',
-      step: HANDS_OFF_STEP,
+      step: HANDS_ON_STEP,
       starts_in_minutes: 6,
-      waiting_on: HANDS_ON_STEP,
+      waiting_on: HANDS_OFF_STEP,
     }
-    render(
-      <MealNowCard
-        card={card}
-        clockLabel={clockLabel}
-        onDone={jest.fn()}
-        onExtend={jest.fn()}
-        onSkip={onSkip}
-        onStartEarly={onStartEarly}
-      />,
-    )
-    expect(screen.getByTestId('meal-now-card-upcoming-timing')).toHaveTextContent('Next at +10 (in 6 min)')
-    expect(screen.getByTestId('meal-now-card-waiting-on')).toHaveTextContent('after Boil the pasta')
 
-    // Encoded the bug before #663: Start now was offered while the step this
-    // one follows was still running.
-    expect(screen.queryByRole('button', { name: 'Start now' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
-    expect(onSkip).toHaveBeenCalledTimes(1)
-    expect(onStartEarly).not.toHaveBeenCalled()
+    it('explains the wait, offers Start now, and says the running step keeps going', () => {
+      const onStartEarly = jest.fn()
+      const onSkip = jest.fn()
+      render(
+        <MealNowCard
+          card={waitingCard}
+          clockLabel={clockLabel}
+          onDone={jest.fn()}
+          onExtend={jest.fn()}
+          onSkip={onSkip}
+          onStartEarly={onStartEarly}
+        />,
+      )
+      expect(screen.getByTestId('meal-now-card-upcoming-timing')).toHaveTextContent('Next at +0 (in 6 min)')
+      expect(screen.getByTestId('meal-now-card-waiting-on')).toHaveTextContent(
+        'Waiting on Simmer the sauce (timer). You can start now.',
+      )
+      expect(screen.getByTestId('meal-now-card-keeps-running')).toHaveTextContent('Simmer the sauce keeps running.')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Start now' }))
+      expect(onStartEarly).toHaveBeenCalledTimes(1)
+      fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+      expect(onSkip).toHaveBeenCalledTimes(1)
+    })
+
+    it('offers "<step> done early" for the running timer when the page wires it, and fires it with that step', () => {
+      const onFinishRunning = jest.fn()
+      render(
+        <MealNowCard
+          card={waitingCard}
+          clockLabel={clockLabel}
+          onDone={jest.fn()}
+          onExtend={jest.fn()}
+          onSkip={jest.fn()}
+          onStartEarly={jest.fn()}
+          onFinishRunning={onFinishRunning}
+        />,
+      )
+      const key = screen.getByRole('button', { name: 'Simmer the sauce done early' })
+      // The visible text names the step too, so the aria-label matches it.
+      expect(key).toHaveTextContent('Simmer the sauce done early')
+      fireEvent.click(key)
+      expect(onFinishRunning).toHaveBeenCalledWith(HANDS_OFF_STEP)
+    })
+
+    it('omits the done-early key when no handler is wired', () => {
+      render(
+        <MealNowCard
+          card={waitingCard}
+          clockLabel={clockLabel}
+          onDone={jest.fn()}
+          onExtend={jest.fn()}
+          onSkip={jest.fn()}
+          onStartEarly={jest.fn()}
+        />,
+      )
+      expect(screen.queryByRole('button', { name: /done early/i })).not.toBeInTheDocument()
+    })
   })
 
   it('without waiting_on: Start now fires onStartEarly and Skip fires onSkip', () => {
@@ -163,6 +201,31 @@ describe('MealNowCard', () => {
       />,
     )
     expect(screen.queryByTestId('meal-now-card-waiting-on')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('meal-now-card-keeps-running')).not.toBeInTheDocument()
+  })
+
+  it('waiting card: one "<step> done early" key per running step, soonest end first, each firing with its step (issue #890)', () => {
+    const later: StreamStep = { ...HANDS_OFF_STEP, key: 'recipe-2:0', label: 'Roast the beans', end: 30 }
+    const sooner: StreamStep = { ...HANDS_OFF_STEP, end: 18 }
+    const onFinishRunning = jest.fn()
+    render(
+      <MealNowCard
+        card={{ kind: 'waiting', running: [later, sooner] }}
+        clockLabel={clockLabel}
+        onDone={jest.fn()}
+        onExtend={jest.fn()}
+        onSkip={jest.fn()}
+        onStartEarly={jest.fn()}
+        onFinishRunning={onFinishRunning}
+      />,
+    )
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Simmer the sauce done early',
+      'Roast the beans done early',
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Roast the beans done early' }))
+    expect(onFinishRunning).toHaveBeenCalledWith(later)
   })
 
   it('shows "Nothing to do right now" and the running steps, soonest end first, with no action pills', () => {
