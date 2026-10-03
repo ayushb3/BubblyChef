@@ -15,6 +15,7 @@ import {
 } from '@/lib/kitchen/places'
 import { movePantryItems, resolvePantryItems, updatePantryItem } from '@/lib/api/pantry'
 import { deferResolve, onResolveSettled, useDeferredResolves } from '@/lib/pantry-undo'
+import { onPantryChanged } from '@/lib/pantry-changed'
 import { addPantryItemToMyGroceryList } from '@/lib/grocery-add'
 import { fetchDashboardDaily } from '@/lib/api/dashboard'
 import type { EnrichedPantryItem } from '@/lib/pantry-helpers'
@@ -222,6 +223,10 @@ export default function HeroHome({
       }),
     [reload],
   )
+
+  // A pantry write from outside the home (first-run stocking, a chat add, a cook,
+  // an undo): re-read, so the counts and the Bubbles card follow (#916).
+  useEffect(() => onPantryChanged(reload), [reload])
 
   // Kitchen scene (#521): `decorations` rows use `name`/`decoration_type`;
   // KitchenScene expects `id`/`slot`. The balance is `null` until `/api/bubbles`

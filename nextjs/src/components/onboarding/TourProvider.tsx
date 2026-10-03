@@ -25,6 +25,8 @@ interface TourContextValue {
   totalSteps: number
   /** The first-run "tick what you usually have" sheet (issue #853). */
   staplesOpen: boolean
+  /** The sheet opens on Bubbles talking first: true on the first-run path only (#915). */
+  staplesIntro: boolean
   /** Open the staples sheet on its own (the Profile entry); closing it does not start the tour. */
   openStaples: () => void
   /**
@@ -66,6 +68,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [staplesOpen, setStaplesOpen] = useState(false)
+  const [staplesIntro, setStaplesIntro] = useState(false)
   // True while the staples sheet is the first-run step (the tour follows it).
   const staplesFirstRunRef = useRef(false)
   const pathname = usePathname()
@@ -95,6 +98,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
           // First run: the staples step comes before the tour, once (#853).
           if (user?.user_metadata?.staples_step_done !== true) {
             staplesFirstRunRef.current = true
+            setStaplesIntro(true)
             setStaplesOpen(true)
           } else {
             setIsOpen(true)
@@ -115,6 +119,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const openStaples = useCallback(() => {
     staplesFirstRunRef.current = false
+    setStaplesIntro(false)
     setStaplesOpen(true)
   }, [])
 
@@ -158,6 +163,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         goBack,
         totalSteps: TOTAL_STEPS,
         staplesOpen,
+        staplesIntro,
         openStaples,
         closeStaples,
       }}
