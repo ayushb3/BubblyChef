@@ -194,12 +194,11 @@ function StaplesSheet() {
       >
         <div className="flex items-start gap-4 py-4">
           <BubblesMascot state="happy" size={72} className="shrink-0" />
-          <SpeechBubble
-            key={beat}
-            text={INTRO_LINES[beat]}
-            testId="bubbles-says"
-            className="min-w-0 flex-1"
-          />
+          {/* Mounted once so each new line is announced; the bubble remounts per line. */}
+          <p className="sr-only" aria-live="polite" data-testid="bubbles-says">
+            {INTRO_LINES[beat]}
+          </p>
+          <SpeechBubble key={beat} text={INTRO_LINES[beat]} announce={false} className="min-w-0 flex-1" />
         </div>
       </PixelSheet>
     )

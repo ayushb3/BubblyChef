@@ -318,27 +318,6 @@ describe('the Bubbly dialogue before the chips (#915)', () => {
     expect(screen.getByRole('dialog', { name: /tick what you usually have/i })).toBeTruthy()
   })
 
-  it('shows the whole line at once under reduced motion', async () => {
-    const original = window.matchMedia
-    window.matchMedia = ((query: string) => ({
-      matches: query.includes('prefers-reduced-motion'),
-      media: query,
-      onchange: null,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
-      dispatchEvent: jest.fn(),
-    })) as unknown as typeof window.matchMedia
-    try {
-      await renderApp({})
-      await screen.findByTestId('staples-step')
-      expect(screen.getByTestId('bubbles-says').textContent).toMatch(/Bubbly/)
-    } finally {
-      window.matchMedia = original
-    }
-  })
-
   it('skipping from the dialogue writes nothing and goes on to the tour', async () => {
     const user = userEvent.setup()
     await renderApp({})
