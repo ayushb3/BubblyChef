@@ -45,6 +45,14 @@ async function stubNetwork(page: Page): Promise<Captured> {
   return captured
 }
 
+async function skipToChips(page: Page) {
+  for (let i = 0; i < 4; i++) {
+    const next = page.getByRole('button', { name: 'Next', exact: true })
+    if (!(await next.isVisible())) return
+    await next.click()
+  }
+}
+
 const TOUR_COPY = "Hi! I'm Bubbly, your kitchen assistant."
 
 test.describe('first-run staples step (#853)', () => {
@@ -54,8 +62,13 @@ test.describe('first-run staples step (#853)', () => {
     const captured = await stubNetwork(page)
     await page.goto('/')
 
+    // Bubbly talks first (#915); tap through to the chips.
+    await expect(page.getByRole('dialog', { name: /welcome to your kitchen/i })).toBeVisible({
+      timeout: 15_000,
+    })
+    await skipToChips(page)
     const sheet = page.getByRole('dialog', { name: /tick what you usually have/i })
-    await expect(sheet).toBeVisible({ timeout: 15_000 })
+    await expect(sheet).toBeVisible()
     // The tour waits behind it.
     await expect(page.getByText(TOUR_COPY)).not.toBeVisible()
 
@@ -64,7 +77,7 @@ test.describe('first-run staples step (#853)', () => {
     await sheet.getByRole('button', { name: 'Eggs' }).click()
     await sheet.getByRole('button', { name: '3 people' }).click()
 
-    await sheet.getByRole('button', { name: 'Add 3' }).click()
+    await sheet.getByRole('button', { name: 'Stock my kitchen (3)' }).click()
 
     await expect(page.getByText(TOUR_COPY)).toBeVisible({ timeout: 10_000 })
 
@@ -84,8 +97,12 @@ test.describe('first-run staples step (#853)', () => {
     const captured = await stubNetwork(page)
     await page.goto('/')
 
+    await expect(page.getByRole('dialog', { name: /welcome to your kitchen/i })).toBeVisible({
+      timeout: 15_000,
+    })
+    await skipToChips(page)
     const sheet = page.getByRole('dialog', { name: /tick what you usually have/i })
-    await expect(sheet).toBeVisible({ timeout: 15_000 })
+    await expect(sheet).toBeVisible()
     await sheet.getByRole('button', { name: 'Salt' }).click()
     await sheet.getByRole('button', { name: 'Skip for now' }).click()
 

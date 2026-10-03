@@ -142,6 +142,11 @@ export default function HomeCardSlot({
   // Latch the first card shown (adjusting state while rendering, React's pattern for
   // state derived from other state).
   if (cardOnScreen && card && latched === null) setLatched(card.fingerprint)
+  // The first-run prompt is the one latched card that stops being true mid-visit:
+  // once the pantry has food, follow the new card instead of hiding it (#916).
+  if (cardOnScreen && card && latched?.startsWith('empty:') && card.kind !== 'empty') {
+    setLatched(card.fingerprint)
+  }
   const visible = cardOnScreen && card !== null && card.fingerprint === latched && !closed
   const shown = visible ? card : null
 

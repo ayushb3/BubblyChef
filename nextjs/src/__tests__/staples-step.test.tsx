@@ -83,6 +83,15 @@ async function renderApp(metadata: Record<string, unknown>) {
   })
 }
 
+// First run opens with Bubbly talking (#915); tap through to the chips.
+async function toChips(user: ReturnType<typeof userEvent.setup>) {
+  for (let i = 0; i < 6; i++) {
+    const next = screen.queryByRole('button', { name: /^next$/i })
+    if (!next) return
+    await user.click(next)
+  }
+}
+
 const sheet = () => screen.getByTestId('staples-step')
 const names = (items: Array<{ name: string }>) => items.map((i) => i.name).sort()
 
@@ -91,7 +100,7 @@ describe('first-run gating', () => {
     await renderApp({})
     await waitFor(() => expect(screen.getByTestId('staples-open').textContent).toBe('true'))
     expect(screen.getByTestId('tour-open').textContent).toBe('false')
-    expect(screen.getByRole('dialog', { name: /tick what you usually have/i })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: /welcome to your kitchen/i })).toBeTruthy()
   })
 
   it('goes straight to the tour when the staples step was already seen', async () => {
@@ -111,16 +120,21 @@ describe('first-run gating', () => {
 })
 
 describe('the staples list', () => {
-  it('offers about two dozen staples in four groups', async () => {
+  it('offers the staples in six groups, nothing pre-selected', async () => {
+    const user = userEvent.setup()
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
     expect(STAPLE_GROUPS.map((g) => g.title)).toEqual([
       'Oils & condiments',
       'Spices',
-      'Dry goods',
-      'Fridge basics',
+      'Grains & pasta',
+      'Baking',
+      'Dairy & eggs',
+      'Produce basics',
     ])
-    expect(ALL_STAPLES).toHaveLength(24)
+    expect(screen.getByRole('button', { name: /stock my kitchen|pick a few/i })).toBeDisabled()
+    expect(within(sheet()).queryAllByRole('button', { pressed: true })).toHaveLength(0)
     for (const group of STAPLE_GROUPS) {
       const section = screen.getByRole('heading', { name: group.title }).closest('section')!
       for (const item of group.items) {
@@ -135,13 +149,14 @@ describe('completing the step', () => {
     const user = userEvent.setup()
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     await user.click(within(sheet()).getByRole('button', { name: 'Olive oil' }))
     await user.click(within(sheet()).getByRole('button', { name: 'Salt' }))
     await user.click(within(sheet()).getByRole('button', { name: 'Eggs' }))
     await user.click(within(sheet()).getByRole('button', { name: '4 people' }))
 
-    const add = screen.getByRole('button', { name: 'Add 3' })
+    const add = screen.getByRole('button', { name: 'Stock my kitchen (3)' })
     await user.click(add)
 
     await waitFor(() => expect(bulkAddMock).toHaveBeenCalledTimes(1))
@@ -169,11 +184,12 @@ describe('completing the step', () => {
     const user = userEvent.setup()
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     await user.click(within(sheet()).getByRole('button', { name: 'Rice' }))
     await user.click(within(sheet()).getByRole('button', { name: 'Pasta' }))
     await user.click(within(sheet()).getByRole('button', { name: 'Rice' }))
-    await user.click(screen.getByRole('button', { name: 'Add 1' }))
+    await user.click(screen.getByRole('button', { name: 'Stock my kitchen (1)' }))
 
     await waitFor(() => expect(bulkAddMock).toHaveBeenCalledTimes(1))
     expect(names(bulkAddMock.mock.calls[0][0])).toEqual(['Pasta'])
@@ -183,6 +199,7 @@ describe('completing the step', () => {
     const user = userEvent.setup()
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     await user.click(within(sheet()).getByRole('button', { name: '6 or more people' }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -198,15 +215,16 @@ describe('completing the step', () => {
     bulkAddMock.mockRejectedValueOnce(new Error('boom'))
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     await user.click(within(sheet()).getByRole('button', { name: 'Flour' }))
-    await user.click(screen.getByRole('button', { name: 'Add 1' }))
+    await user.click(screen.getByRole('button', { name: 'Stock my kitchen (1)' }))
 
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByTestId('staples-open').textContent).toBe('true')
     expect(updateUserMock).not.toHaveBeenCalledWith({ data: { staples_step_done: true } })
 
-    await user.click(screen.getByRole('button', { name: 'Add 1' }))
+    await user.click(screen.getByRole('button', { name: 'Stock my kitchen (1)' }))
     await waitFor(() => expect(bulkAddMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByTestId('staples-open').textContent).toBe('false'))
   })
@@ -217,6 +235,7 @@ describe('skipping', () => {
     const user = userEvent.setup()
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     // Ticking and picking a size, then skipping, still writes none of it.
     await user.click(within(sheet()).getByRole('button', { name: 'Salt' }))
@@ -234,6 +253,7 @@ describe('skipping', () => {
     const user = userEvent.setup()
     await renderApp({})
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     await user.keyboard('{Escape}')
 
@@ -252,6 +272,7 @@ describe('reopened from Profile', () => {
     await renderApp({ onboarding_completed: true, household_size: 3 })
     await user.click(screen.getByRole('button', { name: 'open-from-profile' }))
     await screen.findByTestId('staples-step')
+    await toChips(user)
 
     await waitFor(() =>
       expect(within(sheet()).getByRole('button', { name: '3 people' }).getAttribute('aria-pressed')).toBe(
@@ -266,11 +287,74 @@ describe('reopened from Profile', () => {
     expect(within(sheet()).getByText(/already in your kitchen/i)).toBeTruthy()
 
     await user.click(within(sheet()).getByRole('button', { name: 'Salt' }))
-    await user.click(screen.getByRole('button', { name: 'Add 1' }))
+    await user.click(screen.getByRole('button', { name: 'Stock my kitchen (1)' }))
 
     await waitFor(() => expect(bulkAddMock).toHaveBeenCalledTimes(1))
     expect(names(bulkAddMock.mock.calls[0][0])).toEqual(['Salt'])
     await waitFor(() => expect(screen.getByTestId('staples-open').textContent).toBe('false'))
     expect(screen.getByTestId('tour-open').textContent).toBe('false')
+  })
+})
+
+describe('the Bubbly dialogue before the chips (#915)', () => {
+  it('opens on Bubbly speaking, with no chips and nothing written yet', async () => {
+    await renderApp({})
+    await screen.findByTestId('staples-step')
+    expect(screen.getByTestId('bubbles-says').textContent).toMatch(/\S/)
+    expect(screen.queryByRole('button', { name: 'Olive oil' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeTruthy()
+    expect(bulkAddMock).not.toHaveBeenCalled()
+  })
+
+  it('tap to continue steps through the lines, then shows the chips', async () => {
+    const user = userEvent.setup()
+    await renderApp({})
+    await screen.findByTestId('staples-step')
+    const first = screen.getByTestId('bubbles-says').textContent
+    await user.click(screen.getByRole('button', { name: /^next$/i }))
+    expect(screen.getByTestId('bubbles-says').textContent).not.toBe(first)
+    await toChips(user)
+    expect(screen.getByRole('button', { name: 'Olive oil' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: /tick what you usually have/i })).toBeTruthy()
+  })
+
+  it('skipping from the dialogue writes nothing and goes on to the tour', async () => {
+    const user = userEvent.setup()
+    await renderApp({})
+    await screen.findByTestId('staples-step')
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }))
+    await waitFor(() => expect(screen.getByTestId('staples-open').textContent).toBe('false'))
+    expect(bulkAddMock).not.toHaveBeenCalled()
+    expect(updateUserMock).toHaveBeenCalledWith({ data: { staples_step_done: true } })
+    expect(screen.getByTestId('tour-open').textContent).toBe('true')
+  })
+
+  it('does not appear again once the step was seen', async () => {
+    await renderApp({ staples_step_done: true })
+    await waitFor(() => expect(screen.getByTestId('tour-open').textContent).toBe('true'))
+    expect(screen.queryByTestId('bubbles-says')).toBeNull()
+  })
+
+  it('reopened from Profile goes straight to the chips (no dialogue)', async () => {
+    const user = userEvent.setup()
+    await renderApp({ onboarding_completed: true })
+    await user.click(screen.getByRole('button', { name: 'open-from-profile' }))
+    await screen.findByTestId('staples-step')
+    expect(screen.queryByTestId('bubbles-says')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Olive oil' })).toBeTruthy()
+  })
+
+  it('stocking the kitchen tells the rest of the app the pantry changed (#916)', async () => {
+    const user = userEvent.setup()
+    const seen = jest.fn()
+    const { onPantryChanged } = await import('@/lib/pantry-changed')
+    const off = onPantryChanged(seen)
+    await renderApp({})
+    await screen.findByTestId('staples-step')
+    await toChips(user)
+    await user.click(within(sheet()).getByRole('button', { name: 'Rice' }))
+    await user.click(screen.getByRole('button', { name: 'Stock my kitchen (1)' }))
+    await waitFor(() => expect(seen).toHaveBeenCalled())
+    off()
   })
 })

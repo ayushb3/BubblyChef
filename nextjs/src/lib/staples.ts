@@ -1,7 +1,7 @@
 /**
  * The first-run "tick what you usually have" staples (issue #853).
  *
- * About two dozen common kitchen staples in four groups. Shelf-stable groups are
+ * About thirty common kitchen staples in six groups. Shelf-stable groups are
  * added with no expiry (`no_expiry`: salt does not go off in a month and a guessed
  * date would only put a false "expiring" nudge on it). The fridge basics add with
  * no date supplied, so the server gives them the normal category/location
@@ -9,7 +9,13 @@
  */
 import type { BulkAddItem } from '@/lib/api/pantry'
 
-export type StapleGroupId = 'oils-condiments' | 'spices' | 'dry-goods' | 'fridge'
+export type StapleGroupId =
+  | 'oils-condiments'
+  | 'spices'
+  | 'dry-goods'
+  | 'baking'
+  | 'fridge'
+  | 'produce'
 
 export interface Staple {
   name: string
@@ -17,6 +23,8 @@ export interface Staple {
   quantity: number
   unit: string
   category: string
+  /** Overrides the group's location for this one item (onions keep on the shelf). */
+  location?: 'pantry' | 'fridge'
 }
 
 export interface StapleGroup {
@@ -60,21 +68,32 @@ export const STAPLE_GROUPS: readonly StapleGroup[] = [
   },
   {
     id: 'dry-goods',
-    title: 'Dry goods',
+    title: 'Grains & pasta',
     location: 'pantry',
     shelfStable: true,
     items: [
       { name: 'Rice', emoji: '🍚', quantity: 1, unit: 'bag', category: 'dry_goods' },
       { name: 'Pasta', emoji: '🍝', quantity: 1, unit: 'bag', category: 'dry_goods' },
-      { name: 'Flour', emoji: '🌾', quantity: 1, unit: 'bag', category: 'dry_goods' },
-      { name: 'Sugar', emoji: '🍬', quantity: 1, unit: 'bag', category: 'dry_goods' },
       { name: 'Oats', emoji: '🥣', quantity: 1, unit: 'bag', category: 'dry_goods' },
       { name: 'Canned tomatoes', emoji: '🥫', quantity: 1, unit: 'can', category: 'canned' },
     ],
   },
   {
+    id: 'baking',
+    title: 'Baking',
+    location: 'pantry',
+    shelfStable: true,
+    items: [
+      { name: 'Flour', emoji: '🌾', quantity: 1, unit: 'bag', category: 'dry_goods' },
+      { name: 'Sugar', emoji: '🍬', quantity: 1, unit: 'bag', category: 'dry_goods' },
+      { name: 'Baking powder', emoji: '🥄', quantity: 1, unit: 'item', category: 'dry_goods' },
+      { name: 'Baking soda', emoji: '🧁', quantity: 1, unit: 'item', category: 'dry_goods' },
+      { name: 'Vanilla extract', emoji: '🍦', quantity: 1, unit: 'bottle', category: 'condiments' },
+    ],
+  },
+  {
     id: 'fridge',
-    title: 'Fridge basics',
+    title: 'Dairy & eggs',
     location: 'fridge',
     shelfStable: false,
     items: [
@@ -83,7 +102,20 @@ export const STAPLE_GROUPS: readonly StapleGroup[] = [
       { name: 'Butter', emoji: '🧈', quantity: 1, unit: 'item', category: 'dairy' },
       { name: 'Cheese', emoji: '🧀', quantity: 1, unit: 'item', category: 'dairy' },
       { name: 'Yogurt', emoji: '🥛', quantity: 1, unit: 'item', category: 'dairy' },
+    ],
+  },
+  {
+    // No expiry supplied: the server estimates one per food, as for any other add.
+    id: 'produce',
+    title: 'Produce basics',
+    location: 'fridge',
+    shelfStable: false,
+    items: [
+      { name: 'Onions', emoji: '🧅', quantity: 1, unit: 'bag', category: 'produce', location: 'pantry' },
+      { name: 'Garlic', emoji: '🧄', quantity: 1, unit: 'item', category: 'produce', location: 'pantry' },
+      { name: 'Potatoes', emoji: '🥔', quantity: 1, unit: 'bag', category: 'produce', location: 'pantry' },
       { name: 'Carrots', emoji: '🥕', quantity: 1, unit: 'bag', category: 'produce' },
+      { name: 'Lemons', emoji: '🍋', quantity: 1, unit: 'bag', category: 'produce' },
     ],
   },
 ]
@@ -101,7 +133,7 @@ export function stapleToBulkItem(group: StapleGroup, staple: Staple): BulkAddIte
     quantity: staple.quantity,
     unit: staple.unit,
     category: staple.category,
-    storage_location: group.location,
+    storage_location: staple.location ?? group.location,
     expiry_date: null,
     source: 'manual',
     // Shelf-stable: no date at all. Fridge basics leave it unset so the server
