@@ -28,6 +28,7 @@ ffmpeg -i <recording>.mp4 -vf "scale=390:-2" -c:v libx264 -preset slow -crf 30 -
 | 1. Dinner, planned (the meal engine) | [goal1-dinner-planned.mp4](goal1-dinner-planned.mp4) | 3:30 | 2026-09-30 |
 | 2. The kitchen is the app | [goal2-kitchen.mp4](goal2-kitchen.mp4) | 5:41 | 2026-10-01 |
 | 3. It looks like nothing else (signature components) | [goal3-signature.mp4](goal3-signature.mp4) | 2:46 | 2026-10-01 |
+| Showcase tour (the README demo) | [bubblychef-tour.mp4](bubblychef-tour.mp4) | 1:46 | 2026-10-02 |
 
 ## Goal 1: Dinner, planned
 
@@ -60,3 +61,20 @@ then a single pantry deduction at the end.
 | 1:37 | Cook-along: Now card, Next up, per-dish progress, Ask Bubbles sheet, timers finishing |
 | 2:22 | Recipe library and the Meals tab |
 | 2:26 | Pantry rescue ("Used it"), then the counter ticking up on Home |
+
+## Showcase tour
+
+A short end-to-end tour for the root README: scan, chat, a meal, cook-along, deduction, grocery, library. Unlike the goal recordings it ran on a **production build with every AI call and every `/api/*` call mocked in the browser** (canned responses, no Gemini, no hosted-database writes; the AI service was not running). The receipt image is the repo fixture `nextjs/e2e/fixtures/receipts/grocery-mart.png`; the 8 scanned items match it. Timers were skipped ahead by shifting `Date.now`. Recorded at 390x844, 1:46, 1.7 MB, shrunk with `scale=390:-2 -crf 28`. The recording script was throwaway and is not in the repo.
+
+| Time | Scene |
+|---|---|
+| 0:00 | Kitchen home: the pixel dollhouse wall, expiring tags, bubbles balance |
+| 0:05 | Fridge storage sheet: use-first items, Scene and List views |
+| 0:11 | Scan a receipt (Grocery Mart), then the put-away review over the kitchen; nothing is written until "Put away 8 items" |
+| 0:25 | Chat: "What's for dinner tonight?" returns three meal options as cards |
+| 0:34 | Pick a meal: the waiting card, then the meal with its dishes; Open meal shows one interleaved timeline |
+| 0:44 | Cook-along: Done, Start now, timers in the dock, hands-off steps finishing, "Dinner's ready" |
+| 1:14 | Mark meal as cooked: the Update pantry review, then "Pantry updated!" |
+| 1:23 | "Add to grocery list" for the missing lemon, then the grocery list (ran-out items included) |
+| 1:30 | Recipe library: search, favorite a recipe, the Favorites filter |
+| 1:41 | Back in the kitchen: stock updated, bubbles earned |
