@@ -21,7 +21,7 @@ export default function DietaryPreferences({ profileId, initialSelected }: Dieta
   const mutation = useMutation({
     mutationFn: (next: string[]) => {
       if (!profileId) {
-        throw new Error('Create an account to save dietary preferences')
+        throw new Error('Could not save preferences')
       }
       return updateDietaryPreferences(profileId, next)
     },
