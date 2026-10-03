@@ -4,9 +4,9 @@ A Sanrio-inspired pantry + recipe assistant. Plain Gemini can write you a recipe
 
 **Live:** https://bubbly-chef.vercel.app
 
-[![BubblyChef tour](https://img.youtube.com/vi/0r-LrfWgBrk/maxresdefault.jpg)](https://youtu.be/0r-LrfWgBrk)
+[![BubblyChef tour: scan, chat, meal, cook-along (click to play)](demos/milestones/bubblychef-tour-poster.jpg)](demos/milestones/bubblychef-tour.mp4)
 
-A 1:46 phone-sized tour (scan, chat, meal, cook-along, deduction, grocery, library) is checked in at [`demos/milestones/bubblychef-tour.mp4`](demos/milestones/bubblychef-tour.mp4) (more in [`demos/milestones/`](demos/milestones/README.md)).
+The 1:46 phone-sized tour above covers scan, chat, meal, cook-along, deduction, grocery and library ([`bubblychef-tour.mp4`](demos/milestones/bubblychef-tour.mp4); more in [`demos/milestones/`](demos/milestones/README.md)). Earlier demo: [YouTube](https://youtu.be/0r-LrfWgBrk).
 
 ---
 
@@ -18,7 +18,7 @@ A 1:46 phone-sized tour (scan, chat, meal, cook-along, deduction, grocery, libra
 - **Meal plan and cook-along.** Pick a meal and get an interleaved timeline across dishes, then cook step by step with timers and an "Ask Bubbly" sheet.
 - **One-tap deduction.** When you finish, review what you used and the pantry updates in one go.
 - **Grocery list.** Built from what a meal or recipe is missing; check off, edit, share.
-- **Recipe library.** Search and favorite saved recipes and meals.
+- **Recipe library.** Search saved recipes and meals; favorites apply to recipes.
 - **Rescue before expiry.** "Use it first" surfaces what is about to go off; using or rescuing it earns bubbles, the in-app currency that unlocks kitchen decorations and themes.
 
 ---
@@ -56,7 +56,7 @@ More in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Quick start
 
-Needs Node.js 18+, Python 3.11+, a free [Supabase](https://supabase.com) project and a [Gemini API key](https://aistudio.google.com/).
+Needs Node.js 20+, Python 3.11+, a free [Supabase](https://supabase.com) project and a [Gemini API key](https://aistudio.google.com/).
 
 ```bash
 git clone https://github.com/ayushb3/BubblyChef
