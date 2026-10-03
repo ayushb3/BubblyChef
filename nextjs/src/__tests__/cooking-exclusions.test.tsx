@@ -175,7 +175,7 @@ describe('CookingExclusions (#500)', () => {
     fireEvent.submit(allergyInput().closest('form')!)
 
     await waitFor(() =>
-      expect(screen.getByText('Create an account to save allergies and dislikes')).toBeInTheDocument(),
+      expect(screen.getByText('Could not save allergies and dislikes')).toBeInTheDocument(),
     )
     expect(fetchMock).not.toHaveBeenCalled()
     expect(

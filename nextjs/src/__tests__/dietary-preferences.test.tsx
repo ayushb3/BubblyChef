@@ -98,7 +98,7 @@ describe('DietaryPreferences chips (#394)', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Vegan' }))
 
     await waitFor(() =>
-      expect(screen.getByText('Create an account to save dietary preferences')).toBeInTheDocument()
+      expect(screen.getByText('Could not save preferences')).toBeInTheDocument()
     )
     expect(fetchMock).not.toHaveBeenCalled()
   })

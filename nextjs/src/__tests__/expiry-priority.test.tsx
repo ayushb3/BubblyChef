@@ -126,7 +126,7 @@ describe('ExpiryPriorityControl (#502)', () => {
     fireEvent.click(radio('Off'))
 
     expect(
-      await screen.findByText('Create an account to save this setting'),
+      await screen.findByText('Could not save this setting'),
     ).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(radio('Gentle')).toHaveAttribute('aria-checked', 'true')

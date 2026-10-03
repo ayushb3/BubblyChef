@@ -45,7 +45,7 @@ export default function ExpiryPriorityControl({
   const mutation = useMutation({
     mutationFn: (next: ExpiryPriority) => {
       if (!profileId) {
-        throw new Error('Create an account to save this setting')
+        throw new Error('Could not save this setting')
       }
       return updateExpiryPriority(profileId, next)
     },
