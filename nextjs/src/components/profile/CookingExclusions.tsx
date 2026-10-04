@@ -12,7 +12,7 @@ interface CookingExclusionsProps {
   initialDislikes: string[]
 }
 
-const NEEDS_ACCOUNT = 'Create an account to save allergies and dislikes'
+const NEEDS_ACCOUNT = 'Could not save allergies and dislikes'
 
 /**
  * The profile's two food-exclusion rows (issue #500), under Dietary Preferences.

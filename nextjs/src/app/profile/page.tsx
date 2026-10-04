@@ -14,6 +14,7 @@ import SetUpStaplesButton from '@/components/profile/SetUpStaplesButton'
 import TakeTourButton from '@/components/profile/TakeTourButton'
 import TimerSoundToggle from '@/components/profile/TimerSoundToggle'
 import { isGuestUser } from '@/lib/auth/guest'
+import { ensureProfile } from '@/lib/profile-ensure'
 import ThemePicker from '@/components/ui/ThemePicker'
 import BubblesMascot from '@/components/ui/BubblesMascot'
 
@@ -38,11 +39,13 @@ export default async function ProfilePage() {
     // come from migration 00018 (#500), and naming a column that doesn't exist yet
     // would fail the whole read and lose the dietary chips too. A row without them
     // simply reads as empty.
-    const { data: profile } = await supabase
+    const { data: existing } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('user_id', user.id)
       .single()
+    // A guest has no row yet (#914); make one so the settings below can save.
+    const profile = existing ?? (isGuestUser(user) ? await ensureProfile(supabase, user) : null)
     if (profile) {
       profileId = profile.id as string
       initialDietaryPreferences = (profile.dietary_preferences as string[] | null) ?? []

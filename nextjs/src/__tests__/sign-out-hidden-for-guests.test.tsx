@@ -15,6 +15,7 @@ jest.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({
     auth: { getUser },
     from: () => ({
+      insert: () => ({ select: () => ({ single: async () => ({ data: null, error: null }) }) }),
       select: () => ({
         eq: () => ({
           single,
