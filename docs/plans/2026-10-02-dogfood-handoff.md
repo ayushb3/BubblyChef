@@ -91,3 +91,30 @@ Sign in with a real account to see it.
 
 Issues #887, #888, #890, #891, #892, #894, #900, #901, #904, #905, #906 and #907
 are all closed by the PRs above.
+
+## 10. Dark theme (2026-10-04)
+
+Ayush asked for dark themes ("my eyes"). The plan is
+[docs/plans/2026-10-04-dark-theme.md](2026-10-04-dark-theme.md): a Light / Dark /
+System toggle in Profile (localStorage, works for guests), dark tokens per app
+palette, no flash on load, and a night version of the pixel kitchen. Tickets, in
+order:
+
+- [Issue #919](https://github.com/ayushb3/BubblyChef/issues/919), *tokens, toggle, no flash*. Start here; nothing blocks it.
+- [Issue #920](https://github.com/ayushb3/BubblyChef/issues/920), *migrate app surfaces off light-only colours*. Blocked by #919.
+- [Issue #921](https://github.com/ayushb3/BubblyChef/issues/921), *night palette for the pixel kitchen scene*. Blocked by #919; can run alongside #920.
+- [Issue #922](https://github.com/ayushb3/BubblyChef/issues/922), *polish and contrast audit of every main screen*. Blocked by #920 and #921.
+
+Also recorded here:
+
+- **[PR #917](https://github.com/ayushb3/BubblyChef/pull/917), *settings work for guests* (fixes [issue #914](https://github.com/ayushb3/BubblyChef/issues/914)), is a DRAFT** waiting on
+  migration `00020_guest_profiles.sql`, which does `ALTER email DROP NOT NULL`
+  plus `CREATE OR REPLACE handle_user_email_attached`. Ayush approved applying it
+  ("apply it"), but the Supabase CLI pooler times out from this PC. Apply it
+  through the dashboard SQL editor or a CLI retry, then run
+  `supabase migration repair --status applied 00020 --linked`, verify, then
+  merge.
+- **[PR #918](https://github.com/ayushb3/BubblyChef/pull/918) merged**, closing
+  [issue #915](https://github.com/ayushb3/BubblyChef/issues/915) and
+  [issue #916](https://github.com/ayushb3/BubblyChef/issues/916): the Bubbly
+  staples dialogue and the stale tip.
