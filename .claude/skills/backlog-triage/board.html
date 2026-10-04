@@ -1,0 +1,538 @@
+<title>BubblyChef Triage Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --ground: #fff9f5;
+    --surface: #ffffff;
+    --ink: #4a4a4a;
+    --ink-soft: #7a7270;
+    --line: #f0e2dc;
+    --accent: #d9577a;
+    --accent-soft: #ffe3ea;
+    --mint: #2f8a67;
+    --mint-soft: #dcf5ea;
+    --peach: #b8641c;
+    --peach-soft: #ffead3;
+    --lavender: #6f55a8;
+    --lavender-soft: #ece4f8;
+    --coral: #c4454f;
+    --coral-soft: #ffe1e3;
+    --focus: #d9577a;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #242022;
+      --surface: #2f2a2c;
+      --ink: #f1e9e6;
+      --ink-soft: #b3a8a5;
+      --line: #443c3f;
+      --accent: #ff9ab4;
+      --accent-soft: #4a2f38;
+      --mint: #8fe0bd;
+      --mint-soft: #213a31;
+      --peach: #ffc48c;
+      --peach-soft: #3f3022;
+      --lavender: #cbb6f0;
+      --lavender-soft: #342c42;
+      --coral: #ff9aa2;
+      --coral-soft: #452a2d;
+      --focus: #ff9ab4;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #242022;
+    --surface: #2f2a2c;
+    --ink: #f1e9e6;
+    --ink-soft: #b3a8a5;
+    --line: #443c3f;
+    --accent: #ff9ab4;
+    --accent-soft: #4a2f38;
+    --mint: #8fe0bd;
+    --mint-soft: #213a31;
+    --peach: #ffc48c;
+    --peach-soft: #3f3022;
+    --lavender: #cbb6f0;
+    --lavender-soft: #342c42;
+    --coral: #ff9aa2;
+    --coral-soft: #452a2d;
+    --focus: #ff9ab4;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 15px/1.55 "Nunito", "Segoe UI", system-ui, sans-serif;
+    padding-inline: 16px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding-block: 20px 64px; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; }
+
+  header.top {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    background: var(--ground);
+    padding-block: 12px;
+    border-bottom: 1px solid var(--line);
+    display: grid; gap: 8px;
+  }
+  .title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  h1 { margin: 0; font-size: 1.35rem; font-weight: 800; text-wrap: balance; }
+  .run { color: var(--ink-soft); font-size: 0.9rem; }
+  .meter { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .meter > span { display: block; height: 100%; background: var(--mint); border-radius: 999px; transition: width .3s; }
+  .stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.88rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .stats b { color: var(--ink); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  .intro { color: var(--ink-soft); max-width: 65ch; margin: 16px 0 4px; }
+
+  section.group { margin-top: 28px; }
+  section.group > h2 { font-size: 1.05rem; font-weight: 800; margin: 0 0 2px; }
+  section.group > p.gdesc { margin: 0 0 12px; color: var(--ink-soft); font-size: 0.9rem; max-width: 65ch; }
+  .group-actions { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cards { display: grid; gap: 12px; }
+
+  article.card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: grid; gap: 10px;
+  }
+  article.card.decided { border-color: transparent; box-shadow: inset 0 0 0 2px var(--mint-soft); }
+  article.card.asked { box-shadow: inset 0 0 0 2px var(--lavender-soft); }
+  .card-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+  .card-head a.num { font-weight: 800; text-decoration: none; }
+  .card-head .t { font-weight: 700; flex: 1 1 280px; min-width: 0; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    border-radius: 999px; padding: 1px 10px; font-size: 0.8rem; font-weight: 700;
+    background: var(--line); color: var(--ink); white-space: nowrap;
+  }
+  .chip.conf-high { background: var(--mint-soft); color: var(--mint); }
+  .chip.conf-medium { background: var(--peach-soft); color: var(--peach); }
+  .chip.conf-low { background: var(--coral-soft); color: var(--coral); }
+  .chip.move { background: var(--accent-soft); color: var(--accent); }
+  .chip.applied { background: var(--mint); color: var(--surface); }
+
+  .summary { margin: 0; font-size: 1rem; max-width: 65ch; }
+  .why { margin: 0; color: var(--ink); max-width: 65ch; }
+  .why .lbl, .qs .lbl, .follow .lbl { font-weight: 800; }
+  .qs { background: var(--lavender-soft); border-radius: 10px; padding: 8px 12px; }
+  .qs { display: grid; gap: 10px; }
+  .q { display: grid; gap: 6px; }
+  .qtext { margin: 0; }
+  .opts { display: grid; gap: 4px; }
+  .opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; cursor: pointer; padding: 4px 8px; border-radius: 8px; background: var(--surface); }
+  .opt input { margin: 0; accent-color: var(--lavender); }
+  .opt-label { flex: 1 1 200px; min-width: 0; }
+  .opt-eff { font-size: 0.8rem; color: var(--ink-soft); }
+  .chip.sugg { background: var(--lavender); color: var(--surface); font-size: 0.72rem; padding: 0 8px; }
+  input.qa { font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: 8px; padding: 4px 8px; width: 100%; box-sizing: border-box; }
+  .outcome { margin: 0; font-size: 0.9rem; }
+  .outcome .lbl { font-weight: 800; }
+  .warn { color: var(--coral); font-weight: 700; }
+  button.linkish { border: none; background: none; color: var(--accent); padding: 5px 4px; }
+  .follow { background: var(--peach-soft); border-radius: 10px; padding: 8px 12px; white-space: pre-wrap; }
+  details { font-size: 0.9rem; }
+  details summary { cursor: pointer; color: var(--ink-soft); font-weight: 700; }
+  .ev { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin-top: 6px; }
+  .ev h4 { margin: 0 0 2px; font-size: 0.82rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+  .ev ul { margin: 0; padding-left: 18px; }
+
+  .decide { border-top: 1px dashed var(--line); padding-top: 10px; display: grid; gap: 8px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font: inherit; font-weight: 700; font-size: 0.88rem;
+    border-radius: 999px; padding: 5px 14px; cursor: pointer;
+    border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button.approve[aria-pressed="true"] { background: var(--mint); border-color: var(--mint); color: var(--surface); }
+  button.change[aria-pressed="true"] { background: var(--peach); border-color: var(--peach); color: var(--surface); }
+  button.ask[aria-pressed="true"] { background: var(--lavender); border-color: var(--lavender); color: var(--surface); }
+  button.skip[aria-pressed="true"] { background: var(--ink-soft); border-color: var(--ink-soft); color: var(--surface); }
+  button.primary { background: var(--mint); border-color: var(--mint); color: var(--surface); }
+  button.ghost { background: transparent; }
+  .change-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; }
+  select, textarea {
+    font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--ground);
+    border: 1.5px solid var(--line); border-radius: 10px; padding: 4px 8px;
+  }
+  textarea { width: 100%; box-sizing: border-box; min-height: 2.6em; resize: vertical; }
+  .status { font-size: 0.82rem; color: var(--ink-soft); }
+  .status.err { color: var(--coral); }
+
+  .empty, .notice {
+    margin-top: 32px; padding: 20px; border-radius: 14px;
+    background: var(--surface); border: 1px dashed var(--line); color: var(--ink-soft);
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="title-row">
+      <h1>Triage board</h1>
+      <span class="run" id="run-label">Loading…</span>
+    </div>
+    <div class="meter" aria-hidden="true"><span id="meter-fill" style="width:0%"></span></div>
+    <div class="stats" id="stats"></div>
+    <div class="toolbar">
+      <label class="status" for="filter"><input type="checkbox" id="filter"> Only show undecided</label>
+    </div>
+  </header>
+
+  <p class="intro">Each card is Claude's suggestion for one <span class="mono">needs-triage</span> issue, with what it checked and what it did not. Approve it, change the move, or ask Claude to look again. Nothing changes on GitHub until Claude runs the apply step.</p>
+
+  <div id="board"></div>
+</div>
+
+<script>
+(function () {
+  const GROUPS = [
+    { key: "judgment", title: "Needs your judgment", desc: "Medium or low confidence, or a product call is in it. Read the questions first." },
+    { key: "quick", title: "Quick approvals", desc: "High confidence: the claim was checked on main and the move follows from it." },
+    { key: "close", title: "Suggested closes", desc: "Looks fixed, duplicated or stale. Check the evidence before approving." },
+  ];
+  const MOVES = ["ready-for-agent", "ready-for-human", "needs-info", "wontfix", "close"];
+  const PRIORITIES = ["high", "med", "low", "defer"];
+  const VERDICT_LABEL = { approve: "Approved", change: "Changed", ask: "Asked Claude", skip: "Skipped" };
+
+  const board = document.getElementById("board");
+  const state = { runId: null, run: null, cards: [], decisions: {}, db: null, readOnly: false, subs: [] };
+  // Bulk approve needs two clicks on the same button within BULK_CONFIRM_MS.
+  // The armed state lives on the button itself, and render() builds a fresh
+  // button, so a snapshot update always disarms it: one stray click after a
+  // re-render can never approve a whole group.
+  const BULK_CONFIRM_MS = 8000;
+  let onlyUndecided = false;
+  try { onlyUndecided = localStorage.getItem("triage.onlyUndecided") === "1"; } catch (e) {}
+  const filterBox = document.getElementById("filter");
+  filterBox.checked = onlyUndecided;
+  filterBox.addEventListener("change", () => {
+    onlyUndecided = filterBox.checked;
+    try { localStorage.setItem("triage.onlyUndecided", onlyUndecided ? "1" : "0"); } catch (e) {}
+    render();
+  });
+
+  function el(tag, attrs, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) if (kid != null) n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    return n;
+  }
+
+  function moveText(c) {
+    if (c.move === "hold") return "Hold: stays needs-triage for the next run";
+    if (c.move === "close") {
+      if (c.closeReason === "duplicate" && c.duplicateOf) return "Close: duplicate of #" + c.duplicateOf;
+      return "Close: " + (c.closeReason || "no reason given");
+    }
+    return c.move + " · " + (c.priority || "no priority");
+  }
+
+  function decisionPath(issue) { return "decisions/" + state.runId + "-" + issue; }
+
+  async function saveDecision(card, patch, statusEl) {
+    if (!state.db || state.readOnly) return;
+    const prev = state.decisions[card.issue] || {};
+    const next = Object.assign({ run: state.runId, issue: card.issue, verdict: null, move: null, priority: null, note: "" }, prev, patch, { decidedAt: new Date().toISOString() });
+    delete next._id;
+    statusEl.textContent = "Saving…";
+    statusEl.classList.remove("err");
+    try {
+      await state.db.doc(decisionPath(card.issue)).set(next);
+      statusEl.textContent = "Saved";
+    } catch (e) {
+      if (e && e.code === "invalid_argument") { state.readOnly = true; render(); return; }
+      statusEl.textContent = "Couldn't save (" + (e && e.code || "error") + "). Try again.";
+      statusEl.classList.add("err");
+    }
+  }
+
+  // A question is either a plain string (open, answered in text) or
+  // {text, options: [{label, move?, priority?, closeReason?, duplicateOf?}], recommended}.
+  function questionsOf(c) {
+    return (c.questions || []).map(q => typeof q === "string" ? { text: q, options: [], recommended: null } : Object.assign({ options: [], recommended: null }, q));
+  }
+
+  // The answer in force for question i: the viewer's pick, else the suggested option.
+  function answerOf(q, i, d) {
+    const a = (d.answers || {})[i];
+    if (a !== undefined && a !== null && a !== "") return a;
+    return q.options.length && q.recommended != null ? q.recommended : null;
+  }
+
+  // What approving this card would do, after the chosen options apply their effects.
+  function resolved(c, d) {
+    const r = { move: c.move, priority: c.priority, closeReason: c.closeReason, duplicateOf: c.duplicateOf };
+    questionsOf(c).forEach((q, i) => {
+      const a = answerOf(q, i, d);
+      const opt = typeof a === "number" ? q.options[a] : null;
+      if (opt) for (const k of ["move", "priority", "closeReason", "duplicateOf"]) if (opt[k] != null) r[k] = opt[k];
+    });
+    return r;
+  }
+
+  function effectText(o) {
+    const bits = [];
+    if (o.move === "close") bits.push(o.duplicateOf ? "close as dup of #" + o.duplicateOf : "close" + (o.closeReason ? " (" + o.closeReason + ")" : ""));
+    else if (o.move) bits.push(o.move);
+    if (o.priority) bits.push(o.priority);
+    return bits.length ? "→ " + bits.join(" · ") : "";
+  }
+
+  const openNotes = new Set();
+
+  function renderCard(c) {
+    const d = state.decisions[c.issue] || {};
+    const locked = state.readOnly || !!c.applied;
+    const qs = questionsOf(c);
+    const status = el("span", { class: "status", role: "status" });
+    if (d.verdict) status.textContent = VERDICT_LABEL[d.verdict] + (d.decidedAt ? " · " + new Date(d.decidedAt).toLocaleString() : "");
+
+    const unanswered = qs.filter((q, i) => q.options.length && answerOf(q, i, d) === null).length;
+    const explicitAnswers = () => {
+      const a = Object.assign({}, d.answers || {});
+      qs.forEach((q, i) => { const v = answerOf(q, i, d); if (v !== null) a[i] = v; });
+      return a;
+    };
+
+    const noteBox = el("textarea", { id: "note-" + c.issue, rows: "2", disabled: locked,
+      placeholder: d.verdict === "ask" ? "What should Claude look at?" : d.verdict === "skip" ? "Why not now? (optional)" : "Note for Claude: why, or anything the apply step should know" });
+    noteBox.value = d.note || "";
+    const saveNote = el("button", { class: "ghost", type: "button", hidden: true, onclick: () => { saveDecision(c, { note: noteBox.value }, status); saveNote.hidden = true; } }, "Save note");
+    noteBox.addEventListener("input", () => { saveNote.hidden = noteBox.value === (d.note || ""); });
+    const noteShown = openNotes.has(c.issue) || !!d.note || ["change", "ask", "skip"].includes(d.verdict);
+    const noteWrap = el("div", { class: "note-wrap", hidden: !noteShown }, noteBox);
+    const addNote = el("button", { class: "linkish", type: "button", hidden: noteShown || locked, onclick: () => { openNotes.add(c.issue); noteWrap.hidden = false; addNote.hidden = true; noteBox.focus(); } }, "+ note");
+
+    const verdictBtn = (v, label, cls) => el("button", {
+      class: cls, type: "button", "aria-pressed": d.verdict === v ? "true" : "false",
+      disabled: locked || (v === "approve" && unanswered > 0),
+      title: v === "approve" && unanswered > 0 ? "Pick an answer to every question first" : null,
+      onclick: () => {
+        if (v !== "approve") openNotes.add(c.issue);
+        if (v === "change") {
+          const r = resolved(c, d);
+          saveDecision(c, { verdict: "change", move: d.move || r.move, priority: d.priority || r.priority, note: noteBox.value }, status);
+        } else if (v === "approve") {
+          saveDecision(c, { verdict: "approve", move: null, priority: null, answers: explicitAnswers(), note: noteBox.value }, status);
+        } else {
+          saveDecision(c, { verdict: v, move: null, priority: null, note: noteBox.value }, status);
+        }
+        if (v === "ask") setTimeout(() => { const n = document.getElementById("note-" + c.issue); if (n) n.focus(); }, 60);
+      },
+    }, label);
+
+    const qBlock = qs.length ? el("div", { class: "qs" }, el("span", { class: "lbl" }, qs.length > 1 ? "Questions for you" : "Question for you"),
+      qs.map((q, i) => {
+        const cur = answerOf(q, i, d);
+        const body = [el("p", { class: "qtext", text: q.text })];
+        if (q.options.length) {
+          body.push(el("div", { class: "opts", role: "radiogroup", "aria-label": q.text }, q.options.map((o, oi) => {
+            const id = "q-" + c.issue + "-" + i + "-" + oi;
+            const input = el("input", { type: "radio", id, name: "q-" + c.issue + "-" + i, checked: cur === oi, disabled: locked,
+              onchange: () => saveDecision(c, { answers: Object.assign({}, d.answers || {}, { [i]: oi }) }, status) });
+            return el("label", { class: "opt", for: id }, input,
+              el("span", { class: "opt-label", text: o.label }),
+              q.recommended === oi ? el("span", { class: "chip sugg", text: "suggested" }) : null,
+              effectText(o) ? el("span", { class: "opt-eff", text: effectText(o) }) : null);
+          })));
+        } else {
+          const ta = el("input", { type: "text", id: "qa-" + c.issue + "-" + i, class: "qa", disabled: locked, placeholder: "Your answer (optional)", value: typeof cur === "string" ? cur : "" });
+          ta.addEventListener("change", () => saveDecision(c, { answers: Object.assign({}, d.answers || {}, { [i]: ta.value }) }, status));
+          body.push(ta);
+        }
+        return el("div", { class: "q" }, body);
+      })) : null;
+
+    const r = resolved(c, d);
+    const outcome = d.verdict === "change" ? { move: d.move || r.move, priority: d.priority || r.priority, closeReason: r.closeReason, duplicateOf: r.duplicateOf } : r;
+    const outcomeLine = el("p", { class: "outcome" },
+      el("span", { class: "lbl" }, d.verdict === "change" ? "You set: " : "If approved: "),
+      moveText(outcome),
+      unanswered ? el("span", { class: "warn", text: " · answer " + (unanswered > 1 ? unanswered + " questions" : "the question") + " first" }) : null);
+
+    let changeRow = null;
+    if (d.verdict === "change") {
+      const moveSel = el("select", { id: "move-" + c.issue, disabled: state.readOnly || !!c.applied, onchange: () => saveDecision(c, { move: moveSel.value }, status) },
+        MOVES.map(m => el("option", { value: m, selected: (d.move || c.move) === m }, m)));
+      const priSel = el("select", { id: "pri-" + c.issue, disabled: state.readOnly || !!c.applied, onchange: () => saveDecision(c, { priority: priSel.value }, status) },
+        PRIORITIES.map(p => el("option", { value: p, selected: (d.priority || c.priority) === p }, p)));
+      changeRow = el("div", { class: "change-row" }, el("label", { for: moveSel.id }, "Move to"), moveSel, el("label", { for: priSel.id }, "priority"), priSel);
+    }
+
+    const cls = ["card", d.verdict && d.verdict !== "ask" ? "decided" : "", d.verdict === "ask" ? "asked" : ""].join(" ");
+    return el("article", { class: cls, id: "issue-" + c.issue },
+      el("div", { class: "card-head" },
+        el("a", { class: "num mono", href: c.url, target: "_blank", rel: "noopener" }, "#" + c.issue),
+        el("span", { class: "t", text: c.title })),
+      el("div", { class: "chips" },
+        el("span", { class: "chip move", text: "Suggested: " + moveText(c) }),
+        el("span", { class: "chip conf-" + c.confidence, text: c.confidence + " confidence" }),
+        c.category ? el("span", { class: "chip", text: c.category }) : null,
+        c.applied ? el("span", { class: "chip applied", text: c.applied.move === "hold" ? "Held for next run" : "Applied on GitHub" }) : null),
+      el("p", { class: "summary", text: c.summary }),
+      el("p", { class: "why" }, el("span", { class: "lbl" }, "Why: "), c.why),
+      c.followUp ? el("div", { class: "follow" }, el("span", { class: "lbl" }, "Claude looked again: "), c.followUp) : null,
+      el("details", {},
+        el("summary", {}, "Evidence: " + (c.checked || []).length + " checked, " + (c.notChecked || []).length + " not checked"),
+        el("div", { class: "ev" },
+          el("div", {}, el("h4", { text: "Checked" }), el("ul", {}, (c.checked || []).map(x => el("li", { text: x })))),
+          el("div", {}, el("h4", { text: "Not checked" }), el("ul", {}, (c.notChecked || []).map(x => el("li", { text: x })))))),
+      qBlock,
+      el("div", { class: "decide" },
+        outcomeLine,
+        el("div", { class: "btns" },
+          verdictBtn("approve", "Approve", "approve"),
+          verdictBtn("change", "Change…", "change"),
+          verdictBtn("ask", "Ask Claude", "ask"),
+          verdictBtn("skip", "Not now", "skip"),
+          addNote),
+        changeRow,
+        noteWrap,
+        el("div", { class: "btns" }, saveNote, status)));
+  }
+
+  async function bulkApprove(cards, btn, statusEl) {
+    if (!btn._armed) {
+      const label = btn.textContent;
+      btn._armed = true;
+      btn.textContent = "Confirm: approve " + cards.length;
+      statusEl.textContent = "Click again within " + (BULK_CONFIRM_MS / 1000) + " s to approve all " + cards.length + " as suggested.";
+      btn._disarm = setTimeout(() => {
+        btn._armed = false;
+        btn.textContent = label;
+        statusEl.textContent = "";
+      }, BULK_CONFIRM_MS);
+      return;
+    }
+    clearTimeout(btn._disarm);
+    btn._armed = false;
+    btn.disabled = true;
+    let done = 0;
+    for (const c of cards) {
+      // Re-check the gate at write time: only high-confidence, still-undecided cards.
+      if (c.confidence !== "high" || (state.decisions[c.issue] || {}).verdict || c.applied) continue;
+      const answers = {};
+      let open = false;
+      questionsOf(c).forEach((q, i) => { const a = answerOf(q, i, {}); if (a !== null) answers[i] = a; else if (q.options.length) open = true; });
+      if (open) continue;
+      try {
+        await state.db.doc(decisionPath(c.issue)).set({ run: state.runId, issue: c.issue, verdict: "approve", move: null, priority: null, answers, note: "", bulk: true, decidedAt: new Date().toISOString() });
+        done++;
+        statusEl.textContent = "Approved " + done + " of " + cards.length;
+      } catch (e) {
+        statusEl.textContent = "Stopped after " + done + ": " + (e && e.code || "error");
+        break;
+      }
+    }
+  }
+
+  function render() {
+    const cards = state.cards;
+    const decided = cards.filter(c => { const v = (state.decisions[c.issue] || {}).verdict; return v && v !== "ask"; }).length;
+    const asked = cards.filter(c => (state.decisions[c.issue] || {}).verdict === "ask").length;
+    const applied = cards.filter(c => c.applied).length;
+    document.getElementById("run-label").textContent = state.run
+      ? "Run " + state.run.runId + (state.run.commit ? " · main at " + state.run.commit : "") + (state.readOnly ? " · read-only for you" : "")
+      : "No run yet";
+    document.getElementById("meter-fill").style.width = cards.length ? (100 * decided / cards.length) + "%" : "0%";
+    const stats = document.getElementById("stats");
+    stats.replaceChildren(
+      el("span", {}, el("b", { text: decided + "/" + cards.length }), " decided"),
+      el("span", {}, el("b", { text: String(asked) }), " asked Claude"),
+      el("span", {}, el("b", { text: String(applied) }), " applied on GitHub"));
+
+    if (!state.run) {
+      board.replaceChildren(el("div", { class: "empty", text: "No triage run is loaded. Run the backlog-triage skill and it will fill this board." }));
+      return;
+    }
+    if (!cards.length) {
+      board.replaceChildren(el("div", { class: "empty", text: "This run has no cards yet. Claude writes them as the pass finishes." }));
+      return;
+    }
+
+    const out = [];
+    for (const g of GROUPS) {
+      let list = cards.filter(c => c.group === g.key).sort((a, b) => (a.order || 0) - (b.order || 0));
+      if (!list.length) continue;
+      const undecided = list.filter(c => !(state.decisions[c.issue] || {}).verdict && !c.applied);
+      // Bulk approve trusts confidence, not the group label: a mis-grouped or
+      // hand-edited card must still be decided on its own.
+      const bulkable = undecided.filter(c => c.confidence === "high");
+      if (onlyUndecided) list = undecided;
+      const sec = el("section", { class: "group", id: "g-" + g.key },
+        el("h2", { text: g.title + " (" + cards.filter(c => c.group === g.key).length + ")" }),
+        el("p", { class: "gdesc", text: g.desc }));
+      if (g.key === "quick" && bulkable.length && !state.readOnly) {
+        const st = el("span", { class: "status", role: "status" });
+        const btn = el("button", { class: "primary", type: "button" }, "Approve all " + bulkable.length + " undecided");
+        btn.addEventListener("click", () => bulkApprove(bulkable, btn, st));
+        sec.append(el("div", { class: "group-actions" }, btn, st));
+      }
+      sec.append(el("div", { class: "cards" }, list.map(renderCard)));
+      out.push(sec);
+    }
+    board.replaceChildren(...out);
+  }
+
+  function clearSubs() { state.subs.forEach(u => { try { u(); } catch (e) {} }); state.subs = []; }
+
+  function watchRun(runId) {
+    clearSubs();
+    state.runId = runId; state.cards = []; state.decisions = {};
+    render();
+    const db = state.db;
+    state.subs.push(db.collection("cards").where("run", "==", runId).onSnapshot(snap => {
+      state.cards = snap.docs.map(d => d.data());
+      render();
+    }, e => showNotice("Cards stopped updating (" + e.code + "). Reload the page.")));
+    state.subs.push(db.collection("decisions").where("run", "==", runId).onSnapshot(snap => {
+      const m = {};
+      snap.docs.forEach(d => { const x = d.data(); m[x.issue] = x; });
+      state.decisions = m;
+      render();
+    }, e => showNotice("Decisions stopped updating (" + e.code + "). Reload the page.")));
+  }
+
+  function showNotice(text) { board.prepend(el("div", { class: "notice", text })); }
+
+  async function start() {
+    const db = await (window.claude && window.claude.use ? window.claude.use("db") : Promise.resolve(null));
+    if (!db) {
+      board.replaceChildren(el("div", { class: "notice", text: "This board keeps its cards in the artifact's data store, which this view can't reach. Open it on claude.ai while signed in." }));
+      document.getElementById("run-label").textContent = "Offline";
+      return;
+    }
+    state.db = db;
+    try {
+      const user = window.claude.use ? await window.claude.use("user") : null;
+      if (user && (await user.can("data.write")) === false) state.readOnly = true;
+    } catch (e) {}
+    db.doc("runs/current").onSnapshot(snap => {
+      state.run = snap.exists ? snap.data() : null;
+      if (state.run && state.run.runId !== state.runId) watchRun(state.run.runId);
+      else render();
+    }, e => showNotice("Run info stopped updating (" + e.code + "). Reload the page."));
+  }
+
+  render();
+  start();
+})();
+</script>
